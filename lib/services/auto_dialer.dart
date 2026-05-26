@@ -10,24 +10,7 @@ class AutoDialer {
     return phoneNumber.replaceAll(RegExp(r'[^\d+]'), '');
   }
 
-  static bool _validatePhoneNumber(String? phoneNumber) {
-    if (phoneNumber == null || phoneNumber.isEmpty) {
-      debugPrint('[DIALER] ❌ Validation failed: Phone number is null or empty');
-      return false;
-    }
-    
-    final cleaned = _cleanNumber(phoneNumber);
-    if (cleaned.isEmpty || cleaned.length < 7) {
-      debugPrint('[DIALER] ❌ Validation failed: Invalid phone number format: $phoneNumber (cleaned: $cleaned)');
-      return false;
-    }
-    return true;
-  }
-
   static Future<bool> autoCall(String phoneNumber) async {
-    if (!_validatePhoneNumber(phoneNumber)) {
-      return false;
-    }
     if (!Platform.isAndroid && !Platform.isIOS) {
       debugPrint('[DIALER] Unsupported platform: ${Platform.operatingSystem}');
       return false;
@@ -49,9 +32,6 @@ class AutoDialer {
 
       debugPrint('[DIALER] ❌ Auto-dial platform call returned false');
       return await openDialer(cleanedNumber);
-    } on PlatformException catch (e) {
-      debugPrint('[DIALER] ❌ Auto-dial platform error: ${e.message}');
-      return await openDialer(cleanedNumber);
     } catch (e) {
       debugPrint('[DIALER] ❌ Auto-dial error: $e');
       return await openDialer(cleanedNumber);
@@ -59,10 +39,6 @@ class AutoDialer {
   }
 
   static Future<bool> openDialer(String phoneNumber) async {
-    if (!_validatePhoneNumber(phoneNumber)) {
-      return false;
-    }
-
     if (!Platform.isAndroid && !Platform.isIOS) {
       debugPrint('[DIALER] Unsupported platform: ${Platform.operatingSystem}');
       return false;
@@ -83,9 +59,6 @@ class AutoDialer {
       }
 
       debugPrint('[DIALER] ❌ openDialer platform call returned false');
-      return false;
-    } on PlatformException catch (e) {
-      debugPrint('[DIALER] ❌ Dialer platform error: ${e.message}');
       return false;
     } catch (e) {
       debugPrint('[DIALER] ❌ Dialer error: $e');

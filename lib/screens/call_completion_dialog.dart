@@ -11,6 +11,9 @@ class CallCompletionDialog extends StatefulWidget {
   final String? initialCallStatus;
   final String? initialDisconnectedStatus;
   final bool? initialAttended;
+  final String dataSource;
+  final bool permissionGranted;
+  final int retrievedAttempt;
 
   const CallCompletionDialog({
     super.key,
@@ -23,6 +26,9 @@ class CallCompletionDialog extends StatefulWidget {
     this.initialCallStatus,
     this.initialDisconnectedStatus,
     this.initialAttended,
+    this.dataSource = 'unknown',
+    this.permissionGranted = false,
+    this.retrievedAttempt = -1,
   });
 
   @override
@@ -288,6 +294,9 @@ class _CallCompletionDialogState extends State<CallCompletionDialog> {
             : _disconnectedStatus,
         notes: _notes,
         attended: _attended,
+        dataSource: widget.dataSource,
+        permissionGranted: widget.permissionGranted,
+        retrievedAttempt: widget.retrievedAttempt,
       );
 
       debugPrint("[COMPLETION] Result: $result");

@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -6,20 +5,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
 
 class CallLogApi {
-  static bool _validatePhoneNumber(String? mobileNo) {
-    if (mobileNo == null || mobileNo.isEmpty) {
-      debugPrint("[CALLLOG] ❌ Validation failed: Mobile number is null or empty");
-      return false;
-    }
-    
-    final cleaned = mobileNo.replaceAll(RegExp(r'[^\d+]'), '');
-    if (cleaned.isEmpty || cleaned.length < 7) {
-      debugPrint("[CALLLOG] ❌ Validation failed: Invalid mobile number format: $mobileNo");
-      return false;
-    }
-    return true;
-  }
-
   /// Log a call initiation to Error Log
   static Future<Map<String, dynamic>> logCallInitiation({
     required String doctype,
@@ -28,13 +13,6 @@ class CallLogApi {
     required String mobileNo,
     required DateTime initiatedAt,
   }) async {
-    if (!_validatePhoneNumber(mobileNo)) {
-      return {
-        "success": false,
-        "message": "Invalid mobile number",
-      };
-    }
-
     try {
       final prefs = await SharedPreferences.getInstance();
       final cookie = prefs.getString("cookie") ?? "";
@@ -76,9 +54,6 @@ class CallLogApi {
             "reference_name": docname,
           }
         }),
-      ).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () => throw TimeoutException('API request timeout'),
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
@@ -115,14 +90,10 @@ class CallLogApi {
     required String disconnectedStatus,
     required String notes,
     required bool attended,
+    String dataSource = 'unknown',
+    bool permissionGranted = false,
+    int retrievedAttempt = -1,
   }) async {
-    if (!_validatePhoneNumber(mobileNo)) {
-      return {
-        "success": false,
-        "message": "Invalid mobile number",
-      };
-    }
-
     try {
       final prefs = await SharedPreferences.getInstance();
       final cookie = prefs.getString("cookie") ?? "";
@@ -150,6 +121,9 @@ class CallLogApi {
         "disconnected_status": disconnectedStatus,
         "notes": notes,
         "attended": attended,
+        "data_source": dataSource,
+        "read_call_log_permission": permissionGranted ? 'GRANTED' : 'DENIED',
+        "device_log_retrieval_attempt": retrievedAttempt,
       };
 
       final response = await http.post(
@@ -168,9 +142,6 @@ class CallLogApi {
             "reference_name": docname,
           }
         }),
-      ).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () => throw TimeoutException('API request timeout'),
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
@@ -242,9 +213,6 @@ class CallLogApi {
             "reference_name": docname,
           }
         }),
-      ).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () => throw TimeoutException('API request timeout'),
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
@@ -276,9 +244,6 @@ class CallLogApi {
         headers: {
           'Cookie': cookie,
         },
-      ).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () => throw TimeoutException('API request timeout'),
       );
 
       if (response.statusCode == 200) {

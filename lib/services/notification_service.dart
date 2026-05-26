@@ -126,7 +126,7 @@ class NotificationService {
       // Initialize local notifications
       debugPrint("[INIT] Initializing local notifications...");
       const AndroidInitializationSettings androidInitializationSettings =
-          AndroidInitializationSettings('app');
+          AndroidInitializationSettings('ic_launcher');  // ← Changed from 'app_icon' to 'ic_launcher'
 
       const DarwinInitializationSettings iOSInitializationSettings =
           DarwinInitializationSettings(
@@ -374,7 +374,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
   
   const AndroidInitializationSettings androidInitializationSettings =
-      AndroidInitializationSettings('app');
+      AndroidInitializationSettings('ic_launcher');
   const DarwinInitializationSettings iOSInitializationSettings =
       DarwinInitializationSettings(
     requestSoundPermission: true,
