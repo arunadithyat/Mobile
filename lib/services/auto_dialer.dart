@@ -10,9 +10,29 @@ class AutoDialer {
     return phoneNumber.replaceAll(RegExp(r'[^\d+]'), '');
   }
 
+  // Fix #3: Add phone number validation
+  static bool _validatePhoneNumber(String phoneNumber) {
+    if (phoneNumber.isEmpty) {
+      debugPrint('[DIALER] ❌ Phone number is empty');
+      return false;
+    }
+    
+    final cleaned = _cleanNumber(phoneNumber);
+    if (cleaned.length < 7) {
+      debugPrint('[DIALER] ❌ Phone number too short: $cleaned');
+      return false;
+    }
+    
+    return true;
+  }
+
   static Future<bool> autoCall(String phoneNumber) async {
     if (!Platform.isAndroid && !Platform.isIOS) {
       debugPrint('[DIALER] Unsupported platform: ${Platform.operatingSystem}');
+      return false;
+    }
+
+    if (!_validatePhoneNumber(phoneNumber)) {
       return false;
     }
 
@@ -32,6 +52,10 @@ class AutoDialer {
 
       debugPrint('[DIALER] ❌ Auto-dial platform call returned false');
       return await openDialer(cleanedNumber);
+    } on PlatformException catch (e) {
+      // Fix #8: Sanitize platform channel errors
+      debugPrint('[DIALER] ❌ Platform error: ${e.code} - ${e.message}');
+      return await openDialer(cleanedNumber);
     } catch (e) {
       debugPrint('[DIALER] ❌ Auto-dial error: $e');
       return await openDialer(cleanedNumber);
@@ -41,6 +65,10 @@ class AutoDialer {
   static Future<bool> openDialer(String phoneNumber) async {
     if (!Platform.isAndroid && !Platform.isIOS) {
       debugPrint('[DIALER] Unsupported platform: ${Platform.operatingSystem}');
+      return false;
+    }
+
+    if (!_validatePhoneNumber(phoneNumber)) {
       return false;
     }
 
@@ -59,6 +87,10 @@ class AutoDialer {
       }
 
       debugPrint('[DIALER] ❌ openDialer platform call returned false');
+      return false;
+    } on PlatformException catch (e) {
+      // Fix #8: Sanitize platform channel errors
+      debugPrint('[DIALER] ❌ Platform error: ${e.code} - ${e.message}');
       return false;
     } catch (e) {
       debugPrint('[DIALER] ❌ Dialer error: $e');

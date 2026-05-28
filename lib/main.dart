@@ -10,11 +10,13 @@ import 'package:lead_calling/services/auto_dialer.dart';
 import 'package:lead_calling/api/call_log_api.dart';
 import 'package:lead_calling/screens/call_completion_dialog.dart';
 import 'package:lead_calling/screens/call_queue_screen.dart';
+import 'package:lead_calling/screens/webview_screen.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import 'api/device_api.dart';
 import 'api/login_api.dart';
 import 'api/opportunities_api.dart';
+import 'config.dart';
 import 'services/notification_service.dart';
 import 'services/call_queue_storage_service.dart';
 import 'models/call_queue.dart';
@@ -170,8 +172,8 @@ class _HomePageState extends State<HomePage> {
   Timer? _pauseTimer;
   StreamSubscription<String>? _tokenRefreshSub;
   StreamSubscription<Map<String, dynamic>>? _notificationSub;
-  String? _lastLeadCallKey;
-  DateTime? _lastLeadCallAt;
+  // Fix #2 & #7: Thread-safe duplicate detection with Set<String>
+  Set<String> _recentLeadCalls = {};
   DateTime? _lastPushReceivedAt;
   String _lastPushSource = "-";
   String _lastPushAction = "-";
@@ -522,16 +524,26 @@ class _HomePageState extends State<HomePage> {
   }
 
   bool _isDuplicateLeadCall(Map<String, dynamic> data) {
-    final key =
-        '${data["docname"]}_${data["mobile_no"]}_${data["customer_name"]}';
-    final now = DateTime.now();
-    if (_lastLeadCallKey == key &&
-        _lastLeadCallAt != null &&
-        now.difference(_lastLeadCallAt!).inSeconds <= 3) {
+    // Fix #7: Null-safe duplicate detection with Set<String>
+    final docname = data["docname"]?.toString();
+    final mobileNo = data["mobile_no"]?.toString();
+    final customerName = data["customer_name"]?.toString();
+    
+    if (docname == null || mobileNo == null || customerName == null) {
+      return false;
+    }
+    
+    final key = '${docname}_${mobileNo}_${customerName}';
+    if (_recentLeadCalls.contains(key)) {
       return true;
     }
-    _lastLeadCallKey = key;
-    _lastLeadCallAt = now;
+    
+    _recentLeadCalls.add(key);
+    // Clean up old entries after 5 seconds to prevent memory bloat
+    Future.delayed(const Duration(seconds: 5), () {
+      _recentLeadCalls.remove(key);
+    });
+    
     return false;
   }
 
@@ -580,23 +592,18 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<int?> _selectPauseMinutes() async {
+    // Fix #9: Use pauseIntervalOptions from config
     return showDialog<int>(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text("Pause Call Flow"),
         content: const Text("Select pause interval"),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, 5),
-            child: const Text("5 min"),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, 15),
-            child: const Text("15 min"),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, 30),
-            child: const Text("30 min"),
+          ...AppConfig.pauseIntervalOptions.map(
+            (minutes) => TextButton(
+              onPressed: () => Navigator.pop(context, minutes),
+              child: Text("$minutes min"),
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -659,6 +666,91 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  Widget _buildDrawer() {
+    return Drawer(
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          DrawerHeader(
+            decoration: const BoxDecoration(
+              color: Colors.blue,
+            ),
+            child: const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Text(
+                  'ERP Portal',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.assignment),
+            title: const Text('Tasks'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const WebViewScreen(
+                    title: 'Tasks',
+                    url: 'https://erp.homegeniegroup.in/TG',
+                  ),
+                ),
+              );
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.dashboard),
+            title: const Text('Dashboard'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const WebViewScreen(
+                    title: 'Dashboard',
+                    url: 'https://erp.homegeniegroup.in/salesperson',
+                  ),
+                ),
+              );
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.language),
+            title: const Text('ERP Portal'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const WebViewScreen(
+                    title: 'ERP Portal',
+                    url: 'https://erp.homegeniegroup.in',
+                  ),
+                ),
+              );
+            },
+          ),
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.home),
+            title: const Text('Back to Home'),
+            onTap: () {
+              Navigator.pop(context);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _pauseTimer?.cancel();
@@ -680,6 +772,7 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
+      drawer: _buildDrawer(),
       body: Column(
         children: [
           // Call Flow Status Bar
@@ -1328,12 +1421,18 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
   }
 
   void startCountdown() {
+    // Fix #5: Add try-catch around makeCall to cancel timer on error
     timer = Timer.periodic(
       const Duration(seconds: 1),
       (Timer t) {
         if (countdown <= 1) {
           t.cancel();
-          makeCall();
+          try {
+            makeCall();
+          } catch (e) {
+            debugPrint("[TIMER] Error in makeCall: $e");
+            t.cancel();
+          }
         } else {
           if (!mounted) return;
           setState(() {
@@ -1483,7 +1582,8 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
     debugPrint("[CALL] 🚀 Using AutoDialer to initiate call directly");
     
     final success = await AutoDialer.autoCall(mobileNo);
-    callStarted = false;
+    // Fix #1: Set callStarted to actual success status (not always false)
+    callStarted = success;
 
     if (!success) {
       debugPrint("[CALL] ❌ AutoDialer failed, trying fallback");

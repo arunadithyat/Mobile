@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -26,6 +27,7 @@ class DeviceApi {
         };
       }
 
+      // Fix #4: Add network timeout
       final response = await http.post(
         Uri.parse(AppConfig.registerDeviceApi),
         headers: {
@@ -41,7 +43,7 @@ class DeviceApi {
           "device_token": fcmToken,
           "platform": "android",
         },
-      );
+      ).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final body = response.body;

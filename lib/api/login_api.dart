@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -14,6 +15,7 @@ class LoginApi {
 
     try {
 
+      // Fix #4: Add network timeout
       final response = await http.post(
         Uri.parse(AppConfig.loginApi),
 
@@ -25,7 +27,7 @@ class LoginApi {
           "usr": usr,
           "pwd": pwd,
         },
-      );
+      ).timeout(const Duration(seconds: 10));
 
       if (response.statusCode != 200) {
         return {

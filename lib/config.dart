@@ -14,4 +14,7 @@ class AppConfig {
 
   static const String pauseCallApi =
       "$baseUrl/api/method/itgenie.lead_calling.mobile_api.pause_call";
+
+  // Fix #9: Pause interval options moved to config
+  static const List<int> pauseIntervalOptions = [5, 15, 30];
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -54,7 +55,7 @@ class CallLogApi {
             "reference_name": docname,
           }
         }),
-      );
+      ).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         debugPrint("[CALLLOG] ✅ Call initiated logged to Error Log");
@@ -142,7 +143,7 @@ class CallLogApi {
             "reference_name": docname,
           }
         }),
-      );
+      ).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         debugPrint("[CALLLOG] ✅ Call completed logged to Error Log");
@@ -213,7 +214,7 @@ class CallLogApi {
             "reference_name": docname,
           }
         }),
-      );
+      ).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         debugPrint("[ERRORLOG] ✅ Error logged");
@@ -244,7 +245,7 @@ class CallLogApi {
         headers: {
           'Cookie': cookie,
         },
-      );
+      ).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final jsonData = jsonDecode(response.body);
