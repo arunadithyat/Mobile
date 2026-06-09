@@ -23,6 +23,7 @@ class QueueAddResult {
 class CallQueueStorageService {
   static const String _pendingQueueKey = 'pending_call_queue_v1';
   static Future<void> _op = Future.value();
+  static SharedPreferences? _prefs;
 
   static String buildQueueKey({
     required String docname,
@@ -43,8 +44,11 @@ class CallQueueStorageService {
     return completer.future;
   }
 
+  static Future<SharedPreferences> _getPrefs() async =>
+      _prefs ??= await SharedPreferences.getInstance();
+
   static Future<List<Map<String, dynamic>>> _readRawQueue() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _getPrefs();
     final raw = prefs.getString(_pendingQueueKey);
     if (raw == null || raw.isEmpty) return [];
     try {
@@ -63,7 +67,7 @@ class CallQueueStorageService {
   }
 
   static Future<void> _writeRawQueue(List<Map<String, dynamic>> queue) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _getPrefs();
     await prefs.setString(_pendingQueueKey, jsonEncode(queue));
   }
 
@@ -151,6 +155,13 @@ class CallQueueStorageService {
       });
       await _writeRawQueue(queue);
       debugPrint('[QUEUE][REMOVE] removed key=$key len=${queue.length}');
+    });
+  }
+
+  static Future<void> clearAll() async {
+    await _withLock(() async {
+      await _writeRawQueue([]);
+      debugPrint('[QUEUE][CLEAR] all entries cleared');
     });
   }
 }

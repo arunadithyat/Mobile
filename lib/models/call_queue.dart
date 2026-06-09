@@ -83,6 +83,14 @@ class CallQueue {
 
   bool get isNotEmpty => _queue.isNotEmpty;
 
+  void reorder(int oldIndex, int newIndex) {
+    if (oldIndex < 0 || oldIndex >= _queue.length) return;
+    if (newIndex < 0 || newIndex > _queue.length) return;
+    if (newIndex > oldIndex) newIndex--;
+    final item = _queue.removeAt(oldIndex);
+    _queue.insert(newIndex, item);
+  }
+
   void clear() {
     _queue.clear();
   }

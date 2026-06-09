@@ -16,9 +16,9 @@ import 'package:permission_handler/permission_handler.dart';
 import 'api/device_api.dart';
 import 'api/login_api.dart';
 import 'api/opportunities_api.dart';
+import 'api/call_queue_api.dart';
 import 'config.dart';
 import 'services/notification_service.dart';
-import 'services/call_queue_storage_service.dart';
 import 'models/call_queue.dart';
 
 /// Launches the phone dialer to call the given phone number
@@ -214,42 +214,42 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _loadPendingQueue() async {
     try {
-      final pending = await CallQueueStorageService.loadPendingQueue();
+      debugPrint("[QUEUE][LOAD] Fetching call queue from API...");
+      final result = await CallQueueApi.getCallQueue();
       if (!mounted) return;
-      setState(() {
-        callQueue.clearAll();
-        for (final item in pending) {
-          callQueue.addItem(item);
-        }
-      });
-      debugPrint("[QUEUE][LOAD] Loaded pending queue count=${pending.length}");
+      
+      if (result['success'] == true) {
+        final queueItems = result['queue'] as List<dynamic>? ?? [];
+        setState(() {
+          callQueue.clearAll();
+          if (queueItems.isNotEmpty) {
+            for (final item in queueItems) {
+              if (item is CallQueueItem) {
+                callQueue.addItem(item);
+              }
+            }
+          }
+        });
+        debugPrint("[QUEUE][LOAD] ✅ Loaded queue from API - ${queueItems.length} items");
+      } else {
+        debugPrint("[QUEUE][LOAD] ❌ API error: ${result['message']}");
+      }
     } catch (e) {
-      debugPrint("[QUEUE][LOAD] Failed to load pending queue: $e");
+      debugPrint("[QUEUE][LOAD] ❌ Failed to load queue from API: $e");
     }
   }
 
-  Future<QueueAddResult> _enqueueLeadCall(
+  Future<void> _enqueueLeadCall(
     Map<String, dynamic> normalized, {
     required String reason,
   }) async {
-    debugPrint("[QUEUE][FLOW] queue add started reason=$reason");
-    final result = await CallQueueStorageService.addIfNotPending(normalized);
-    if (!result.success) {
-      debugPrint("[QUEUE][FLOW] queue add failure reason=$reason message=${result.message}");
-      return result;
-    }
-    if (result.duplicate) {
-      debugPrint("[QUEUE][FLOW] duplicate skipped reason=$reason");
-      return result;
-    }
-
-    if (result.item != null) {
-      setState(() {
-        callQueue.addItem(result.item!);
-      });
-    }
-    debugPrint("[QUEUE][FLOW] queue add success reason=$reason");
-    return result;
+    debugPrint("[QUEUE][FLOW] Adding to in-memory queue - reason=$reason");
+    // Create CallQueueItem from the normalized data
+    final item = CallQueueItem.fromMap(normalized);
+    setState(() {
+      callQueue.addItem(item);
+    });
+    debugPrint("[QUEUE][FLOW] ✅ Added to queue - queue length=${callQueue.length}");
   }
 
   Future<void> _initializeNotifications() async {
@@ -365,20 +365,120 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
+  Future<void> _handleCallBatch(
+    Map<String, dynamic> batchData, {
+    String source = "unknown",
+  }) async {
+    debugPrint("========== HANDLE CALL BATCH ==========");
+    debugPrint("Source: $source");
+    debugPrint("Batch Name: ${batchData['call_batch_name']}");
+    debugPrint("Total Leads: ${batchData['total_leads']}");
+    debugPrint("Is paused: $isCallFlowPaused");
+    debugPrint("Queue length: ${callQueue.length}");
+    
+    if (!mounted) {
+      debugPrint("❌ Not mounted, ignoring batch");
+      return;
+    }
+
+    final totalLeads = batchData['total_leads'] ?? 0;
+    final leads = batchData['leads'] ?? [];
+
+    debugPrint("Processing ${leads.length} leads from batch");
+
+    // Show notification about batch arrival
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Call Batch Added with Count: $totalLeads'),
+        duration: const Duration(seconds: 3),
+      ),
+    );
+
+    // Normalize and deduplicate all leads up front
+    final normalizedLeads = <Map<String, dynamic>>[];
+    for (int i = 0; i < leads.length; i++) {
+      final leadData = leads[i];
+      final normalized = NotificationService.normalizeLeadCallPayload(
+        leadData is Map ? Map<String, dynamic>.from(leadData as Map) : {},
+      );
+      if (normalized == null) {
+        debugPrint("[BATCH] ❌ Failed to normalize lead at index $i");
+        continue;
+      }
+      if (_isDuplicateLeadCall(normalized)) {
+        debugPrint("[BATCH] ⏭️ Skipping duplicate: ${normalized['docname']}");
+        continue;
+      }
+      normalizedLeads.add(normalized);
+    }
+
+    if (normalizedLeads.isEmpty) {
+      debugPrint("[BATCH] No valid leads to process");
+      return;
+    }
+
+    final processFirstImmediately = !isCallFlowPaused && !_isLeadCallInProgress;
+
+    // Queue all leads that won't be processed immediately — do this FIRST
+    // so the queue badge appears before the first call screen opens.
+    final queueStartIndex = processFirstImmediately ? 1 : 0;
+    for (int i = queueStartIndex; i < normalizedLeads.length; i++) {
+      await _enqueueLeadCall(normalizedLeads[i], reason: "batch_queued");
+      if (!mounted) return;
+    }
+
+    if (processFirstImmediately) {
+      debugPrint("[BATCH] ✅ Processing first lead immediately");
+      setState(() { _isLeadCallInProgress = true; });
+
+      final routeResult = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => LeadCallScreen(data: normalizedLeads[0]),
+        ),
+      );
+
+      if (!mounted) return;
+      setState(() { _isLeadCallInProgress = false; });
+
+      // Re-queue the first lead if the user cancelled it
+      if (routeResult is Map<String, dynamic> && routeResult['status'] == 'cancelled') {
+        debugPrint("[BATCH] ℹ️ First lead cancelled — re-queuing");
+        await _enqueueLeadCall(normalizedLeads[0], reason: "batch_first_cancelled");
+      }
+    }
+
+    debugPrint("[BATCH] ========== BATCH PROCESSING COMPLETE ==========");
+    debugPrint("[BATCH] Total valid leads: ${normalizedLeads.length}");
+    debugPrint("[BATCH] Queue length after batch: ${callQueue.length}");
+    debugPrint("========== END CALL BATCH ==========");
+  }
+
   Future<void> _handleIncomingLeadCall(
     Map<String, dynamic> data, {
     String source = "unknown",
   }) async {
-    debugPrint("========== HANDLE INCOMING LEAD CALL ==========");
+    debugPrint("========== HANDLE INCOMING NOTIFICATION ==========");
     debugPrint("Source: $source");
     debugPrint("Raw data: $data");
-    debugPrint("Is paused: $isCallFlowPaused");
-    debugPrint("Queue length: ${callQueue.length}");
     
     if (!mounted) {
       debugPrint("❌ Not mounted, ignoring");
       return;
     }
+
+    // Check if this is a CALL_BATCH
+    final batchData = NotificationService.normalizeCallBatchPayload(data);
+    if (batchData != null && batchData["type"] == "CALL_BATCH") {
+      debugPrint("✅ Detected CALL_BATCH - routing to batch handler");
+      await _handleCallBatch(batchData, source: source);
+      return;
+    }
+
+    // Otherwise, process as single LEAD_CALL (existing logic)
+    debugPrint("========== HANDLE INCOMING LEAD CALL ==========");
+    debugPrint("Is paused: $isCallFlowPaused");
+    debugPrint("Queue length: ${callQueue.length}");
 
     final normalized = NotificationService.normalizeLeadCallPayload(data);
     debugPrint("Normalized: $normalized");
@@ -412,29 +512,15 @@ class _HomePageState extends State<HomePage> {
     if (isCallFlowPaused || _isLeadCallInProgress) {
       debugPrint("⏸️ Call flow is paused. Adding to queue...");
       final reason = isCallFlowPaused ? "paused_flow" : "already_in_call";
-      final enqueueResult = await _enqueueLeadCall(normalized, reason: reason);
+      await _enqueueLeadCall(normalized, reason: reason);
       if (!mounted) return;
       setState(() {
-        _lastPushAction = enqueueResult.success
-            ? (enqueueResult.duplicate ? "duplicate_skipped" : "queued_$reason")
-            : "queue_add_failed";
+        _lastPushAction = "queued_$reason";
       });
-      if (!enqueueResult.success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to queue incoming call. Please retry.'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-        debugPrint("========== END INCOMING LEAD CALL ==========");
-        return;
-      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            enqueueResult.duplicate
-                ? 'Call already pending in queue'
-                : 'Call from ${normalized["customer_name"] ?? "Unknown"} queued',
+            'Call from ${normalized["customer_name"] ?? "Unknown"} queued',
           ),
           duration: const Duration(seconds: 2),
         ),
@@ -458,19 +544,11 @@ class _HomePageState extends State<HomePage> {
       _isLeadCallInProgress = false;
     });
     if (routeResult is Map<String, dynamic> && routeResult['status'] == 'cancelled') {
-      final enqueueResult = await _enqueueLeadCall(
+      await _enqueueLeadCall(
         normalized,
         reason: "manual_cancel",
       );
       if (!mounted) return;
-      if (!enqueueResult.success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Call cancelled, but queue add failed'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
     }
     setState(() {
       _lastPushAction = "navigated_to_lead_call_screen";
@@ -484,40 +562,42 @@ class _HomePageState extends State<HomePage> {
       MaterialPageRoute(
         builder: (_) => CallQueueScreen(
           callQueue: callQueue,
-          onCancel: (index) {
+          onReorder: (oldIndex, newIndex) {
             setState(() {
-              callQueue.remove(index);
+              callQueue.reorder(oldIndex, newIndex);
             });
-            debugPrint("[QUEUE] Canceled call at index $index");
-          },
-          onClearAll: () {
-            setState(() {
-              callQueue.clearAll();
-            });
-            debugPrint("[QUEUE] Cleared all calls");
           },
         ),
       ),
-    ).then((selectedIndex) {
+    ).then((selectedIndex) async {
       if (selectedIndex != null && selectedIndex is int) {
-        // User selected a call to make
         final callItem = callQueue.get(selectedIndex);
         if (callItem != null) {
           callQueue.remove(selectedIndex);
           setState(() {});
-          unawaited(
-            CallQueueStorageService.removePendingByKey(
-              docname: callItem.docname,
-              mobileNo: callItem.mobileNo,
-            ),
-          );
-          
-          Navigator.push(
+
+          setState(() { _isLeadCallInProgress = true; });
+
+          final result = await Navigator.push(
             context,
             MaterialPageRoute(
               builder: (_) => LeadCallScreen(data: callItem.toMap()),
             ),
           );
+
+          if (!mounted) return;
+          setState(() { _isLeadCallInProgress = false; });
+
+          // Call was not answered — re-queue it and stop the loop
+          if (result is Map<String, dynamic> && result['status'] == 'not_connected') {
+            await _enqueueLeadCall(callItem.toMap(), reason: 'not_connected_requeue');
+            return;
+          }
+
+          // Auto-process next call if queue still has items
+          if (callQueue.isNotEmpty) {
+            _processFirstQueuedCall();
+          }
         }
       }
     });
@@ -639,21 +719,38 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  void _processFirstQueuedCall() {
+  Future<void> _processFirstQueuedCall() async {
     final call = callQueue.removeFirst();
-    if (call != null && mounted) {
-      unawaited(
-        CallQueueStorageService.removePendingByKey(
-          docname: call.docname,
-          mobileNo: call.mobileNo,
-        ),
-      );
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => LeadCallScreen(data: call.toMap()),
-        ),
-      );
+    if (call == null || !mounted) return;
+
+    unawaited(
+      CallQueueStorageService.removePendingByKey(
+        docname: call.docname,
+        mobileNo: call.mobileNo,
+      ),
+    );
+
+    setState(() { _isLeadCallInProgress = true; });
+
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LeadCallScreen(data: call.toMap()),
+      ),
+    );
+
+    if (!mounted) return;
+    setState(() { _isLeadCallInProgress = false; });
+
+    // Call was not answered — re-queue it and stop the loop
+    if (result is Map<String, dynamic> && result['status'] == 'not_connected') {
+      await _enqueueLeadCall(call.toMap(), reason: 'not_connected_requeue');
+      return;
+    }
+
+    // Auto-process next call if queue still has items
+    if (callQueue.isNotEmpty) {
+      _processFirstQueuedCall();
     }
   }
 
@@ -900,34 +997,15 @@ class _HomePageState extends State<HomePage> {
                           ),
                         ],
                       ),
-                      Row(
-                        children: [
-                          ElevatedButton.icon(
-                            onPressed: _processFirstQueuedCall,
-                            icon: const Icon(Icons.phone),
-                            label: const Text("Process"),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.green,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(horizontal: 12),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          ElevatedButton.icon(
-                            onPressed: () {
-                              setState(() {
-                                callQueue.clearAll();
-                              });
-                            },
-                            icon: const Icon(Icons.clear),
-                            label: const Text("Clear"),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.red,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(horizontal: 12),
-                            ),
-                          ),
-                        ],
+                      ElevatedButton.icon(
+                        onPressed: _processFirstQueuedCall,
+                        icon: const Icon(Icons.phone),
+                        label: const Text("Process"),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                        ),
                       ),
                     ],
                   ),
@@ -1286,41 +1364,41 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
     debugPrint('[CALLLOG] READ_CALL_LOG permission: ${permissionGranted ? '✅ GRANTED' : '❌ DENIED'}');
     
     final initiatedAt = _initiatedAt ?? DateTime.now();
-    final maxAttempts = permissionGranted ? 6 : 3;
-    
+    final maxAttempts = permissionGranted ? 4 : 2;
+
     for (int attempt = 1; attempt <= maxAttempts; attempt++) {
       debugPrint('[CALLLOG] 🔄 Attempt $attempt/$maxAttempts for: $mobileNo');
-      
+
       try {
         final callInfo = await AutoDialer.getLastCallInfoForSession(
           mobileNo,
           initiatedAt: initiatedAt,
         );
-        
+
         final found = callInfo['found'] == true;
         final durationSeconds = callInfo['durationSeconds'] is int
             ? callInfo['durationSeconds'] as int
             : int.tryParse(callInfo['durationSeconds']?.toString() ?? '0') ?? 0;
-        
-        if (found && durationSeconds > 0) {
+
+        if (found) {
           debugPrint('[CALLLOG] ✅ Found call info on attempt $attempt');
           debugPrint('[CALLLOG] Duration: ${durationSeconds}s, Status: ${callInfo['callStatus']}, Attended: ${callInfo['attended']}');
-          
+
           callInfo['dataSource'] = 'device';
           callInfo['permissionGranted'] = permissionGranted;
           callInfo['retrievedAttempt'] = attempt;
           return callInfo;
         }
-        
+
         if (attempt < maxAttempts) {
-          final delayMs = 800 + (attempt * 200);
+          final delayMs = 300 + (attempt * 100);
           debugPrint('[CALLLOG] ⏳ No data on attempt $attempt, waiting ${delayMs}ms before retry...');
           await Future.delayed(Duration(milliseconds: delayMs));
         }
       } catch (e) {
         debugPrint('[CALLLOG] ❌ Error on attempt $attempt: $e');
         if (attempt < maxAttempts) {
-          await Future.delayed(const Duration(milliseconds: 800));
+          await Future.delayed(const Duration(milliseconds: 300));
         }
       }
     }
@@ -1380,6 +1458,34 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
     if (mobileNo.isNotEmpty) {
       final callInfo = await _fetchCallInfoWithRetry(mobileNo);
       if (callInfo['found'] == true) {
+        final attended = callInfo['attended'] == true;
+
+        // Call log shows customer did not answer — auto-log and re-queue
+        if (!attended) {
+          callStarted = false;
+          unawaited(CallLogApi.updateCallLog(
+            doctype: widget.data["doctype"]?.toString() ?? '',
+            docname: widget.data["docname"]?.toString() ?? '',
+            customerName: widget.data["customer_name"]?.toString() ?? '',
+            mobileNo: mobileNo,
+            initiatedTime: _initiatedAt ?? DateTime.now(),
+            callDuration: callInfo['durationSeconds'] is int
+                ? callInfo['durationSeconds'] as int
+                : int.tryParse(callInfo['durationSeconds']?.toString() ?? '0') ?? 0,
+            callStatus: callInfo['callStatus']?.toString() ?? 'Not Connected',
+            disconnectedStatus: callInfo['disconnectedStatus']?.toString() ?? 'not_connected',
+            attended: false,
+            notes: '',
+            dataSource: callInfo['dataSource']?.toString() ?? 'device',
+            permissionGranted: callInfo['permissionGranted'] == true,
+            retrievedAttempt: callInfo['retrievedAttempt'] is int
+                ? callInfo['retrievedAttempt'] as int
+                : int.tryParse(callInfo['retrievedAttempt']?.toString() ?? '-1') ?? -1,
+          ));
+          if (mounted) Navigator.pop(context, {'status': 'not_connected'});
+          return;
+        }
+
         final durationSeconds = callInfo['durationSeconds'] is int
             ? callInfo['durationSeconds'] as int
             : int.tryParse(callInfo['durationSeconds']?.toString() ?? '0') ?? 0;
@@ -1387,8 +1493,7 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
         final callStatus = callInfo['callStatus']?.toString() ?? 'Unknown';
         final disconnectedStatus =
             callInfo['disconnectedStatus']?.toString() ?? 'unknown';
-        final attended = callInfo['attended'] == true;
-        
+
         if (mounted) {
           await _showCallCompletionDialog(
             callDuration: callDuration,
@@ -1416,7 +1521,7 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
         await _showCallCompletionDialog();
       }
     }
-    
+
     callStarted = false;
   }
 
@@ -1675,6 +1780,33 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
 
     final callInfo = await _fetchCallInfoWithRetry(mobileNo);
     if (callInfo['found'] == true) {
+      final attended = callInfo['attended'] == true;
+
+      // Call log shows customer did not answer — auto-log and re-queue
+      if (!attended) {
+        unawaited(CallLogApi.updateCallLog(
+          doctype: widget.data["doctype"]?.toString() ?? '',
+          docname: widget.data["docname"]?.toString() ?? '',
+          customerName: widget.data["customer_name"]?.toString() ?? '',
+          mobileNo: mobileNo,
+          initiatedTime: _initiatedAt ?? DateTime.now(),
+          callDuration: callInfo['durationSeconds'] is int
+              ? callInfo['durationSeconds'] as int
+              : int.tryParse(callInfo['durationSeconds']?.toString() ?? '0') ?? 0,
+          callStatus: callInfo['callStatus']?.toString() ?? 'Not Connected',
+          disconnectedStatus: callInfo['disconnectedStatus']?.toString() ?? 'not_connected',
+          attended: false,
+          notes: '',
+          dataSource: callInfo['dataSource']?.toString() ?? 'device',
+          permissionGranted: callInfo['permissionGranted'] == true,
+          retrievedAttempt: callInfo['retrievedAttempt'] is int
+              ? callInfo['retrievedAttempt'] as int
+              : int.tryParse(callInfo['retrievedAttempt']?.toString() ?? '-1') ?? -1,
+        ));
+        if (mounted) Navigator.pop(context, {'status': 'not_connected'});
+        return;
+      }
+
       final durationSeconds = callInfo['durationSeconds'] is int
           ? callInfo['durationSeconds'] as int
           : int.tryParse(callInfo['durationSeconds']?.toString() ?? '0') ?? 0;
@@ -1682,7 +1814,6 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
       final callStatus = callInfo['callStatus']?.toString() ?? 'Unknown';
       final disconnectedStatus =
           callInfo['disconnectedStatus']?.toString() ?? 'unknown';
-      final attended = callInfo['attended'] == true;
       _showCallCompletionDialog(
         callDuration: callDuration,
         callStatus: callStatus,

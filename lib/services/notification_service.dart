@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:lead_calling/services/call_queue_storage_service.dart';
+
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
@@ -116,6 +116,174 @@ class NotificationService {
     };
     
     debugPrint("[NOTIFY] ✅ normalized => $normalized");
+    return normalized;
+  }
+
+  static Map<String, dynamic>? normalizeCallBatchPayload(
+    Map<String, dynamic> rawData,
+  ) {
+    debugPrint("[BATCH] normalizeCallBatchPayload input => $rawData");
+    
+    final merged = <String, dynamic>{};
+
+    void merge(dynamic source) {
+      if (source is Map) {
+        source.forEach((key, value) {
+          merged[key.toString()] = value;
+        });
+        return;
+      }
+      if (source is String) {
+        try {
+          final decoded = jsonDecode(source);
+          if (decoded is Map) {
+            decoded.forEach((key, value) {
+              merged[key.toString()] = value;
+            });
+          }
+        } catch (_) {
+          // Ignore non-JSON strings
+        }
+      }
+    }
+
+    merge(rawData);
+    merge(rawData['data']);
+    merge(rawData['payload']);
+    merge(rawData['message']);
+
+    debugPrint("[BATCH] merged data => $merged");
+    debugPrint("[BATCH] merged keys: ${merged.keys.toList()}");
+
+    dynamic pick(List<String> keys) {
+      for (final key in keys) {
+        if (merged.containsKey(key) && merged[key] != null) {
+          debugPrint("[BATCH] pick('$key') found!");
+          return merged[key];
+        } else {
+          debugPrint("[BATCH] pick('$key') not found (exists: ${merged.containsKey(key)}, isNull: ${merged[key] == null})");
+        }
+      }
+      debugPrint("[BATCH] pick() returning null for keys: $keys");
+      return null;
+    }
+
+    final type = (pick(['type', 'event', 'event_type']) ?? '').toString().trim();
+    debugPrint("[BATCH] extracted type => '$type'");
+    
+    // Check if it's a CALL_BATCH
+    if (type.toUpperCase() != 'CALL_BATCH') {
+      debugPrint("[BATCH] ❌ Not a CALL_BATCH (type: '$type')");
+      return null;
+    }
+
+    // Verify required batch fields
+    final totalLeads = pick(['total_leads', 'totalLeads', 'lead_count']);
+    dynamic leadsRaw = pick(['leads']);
+    
+    debugPrint("[BATCH] totalLeads picked: $totalLeads (type: ${totalLeads.runtimeType})");
+    if (leadsRaw == null) {
+      debugPrint("[BATCH] leadsRaw: null");
+    } else if (leadsRaw is List) {
+      debugPrint("[BATCH] leadsRaw: List with ${(leadsRaw as List).length} items");
+    } else if (leadsRaw is String) {
+      debugPrint("[BATCH] leadsRaw: String (${leadsRaw.length} chars) - will try JSON parse");
+    } else {
+      debugPrint("[BATCH] leadsRaw: ${leadsRaw.runtimeType}");
+    }
+    
+    if (leadsRaw == null || totalLeads == null) {
+      debugPrint("[BATCH] ❌ Missing required batch fields (leads=$leadsRaw, totalLeads=$totalLeads)");
+      return null;
+    }
+
+    // Try to parse leads array (handle both direct arrays and stringified JSON/Python dicts)
+    List<dynamic> leads = [];
+    try {
+      if (leadsRaw is List) {
+        leads = leadsRaw;
+      } else if (leadsRaw is String) {
+        debugPrint("[BATCH] Leads is String, trying to parse...");
+        // First try as-is (normal JSON)
+        try {
+          final decoded = jsonDecode(leadsRaw);
+          if (decoded is List) {
+            leads = decoded;
+            debugPrint("[BATCH] ✅ Leads parsed from JSON string");
+          }
+        } catch (jsonError) {
+          // If JSON fails, try converting Python dict format (single quotes) to JSON (double quotes)
+          debugPrint("[BATCH] JSON parse failed, trying Python dict format conversion...");
+          try {
+            // Convert Python dict format to JSON: replace single quotes with double quotes
+            // But be careful: only replace quotes that are part of keys/strings, not actual content
+            final jsonStr = leadsRaw
+                .replaceAll("'", '"')  // Replace single quotes with double quotes
+                .replaceAll('True', 'true')
+                .replaceAll('False', 'false')
+                .replaceAll('None', 'null');
+            
+            debugPrint("[BATCH] Converted string: $jsonStr");
+            final decoded = jsonDecode(jsonStr);
+            if (decoded is List) {
+              leads = decoded;
+              debugPrint("[BATCH] ✅ Leads parsed from Python dict string");
+            }
+          } catch (pythonError) {
+            debugPrint("[BATCH] ❌ Both JSON and Python dict parsing failed");
+            debugPrint("[BATCH]    JSON error: $jsonError");
+            debugPrint("[BATCH]    Python error: $pythonError");
+            return null;
+          }
+        }
+      } else {
+        debugPrint("[BATCH] ❌ Leads is neither List nor String: ${leadsRaw.runtimeType}");
+        return null;
+      }
+    } catch (e) {
+      debugPrint("[BATCH] ❌ Error processing leads: $e");
+      return null;
+    }
+
+    // Convert leads array to List<Map>
+    List<Map<String, dynamic>> parsedLeads = [];
+    try {
+      for (int i = 0; i < leads.length; i++) {
+        final lead = leads[i];
+        if (lead is Map) {
+          parsedLeads.add(Map<String, dynamic>.from(lead));
+        } else if (lead is String) {
+          // Handle stringified lead objects
+          try {
+            final decoded = jsonDecode(lead);
+            if (decoded is Map) {
+              parsedLeads.add(Map<String, dynamic>.from(decoded));
+            }
+          } catch (_) {
+            debugPrint("[BATCH] ⚠️ Could not parse lead[$i]: $lead");
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint("[BATCH] ❌ Error converting leads to Map: $e");
+      return null;
+    }
+
+    if (parsedLeads.isEmpty) {
+      debugPrint("[BATCH] ❌ No valid leads found after parsing");
+      return null;
+    }
+
+    final normalized = {
+      'type': 'CALL_BATCH',
+      'call_batch_name': (pick(['call_batch_name', 'batch_name', 'batchName']) ?? '').toString(),
+      'title': (pick(['title']) ?? '').toString(),
+      'total_leads': int.tryParse(totalLeads.toString()) ?? 0,
+      'leads': parsedLeads,
+      'received_at': DateTime.now().toIso8601String(),
+    };
+    
+    debugPrint("[BATCH] ✅ normalized batch => type=${normalized['type']}, total_leads=${normalized['total_leads']}, leads_count=${parsedLeads.length}");
     return normalized;
   }
 
@@ -254,8 +422,20 @@ class NotificationService {
     debugPrint("[FOREGROUND MESSAGE] Received!");
     debugPrint("Message ID: ${message.messageId}");
     debugPrint("Sent time: ${message.sentTime}");
-    debugPrint("Data field: ${message.data}");
-    debugPrint("Notification field: ${message.notification}");
+    debugPrint("[RAW MESSAGE.DATA] ${message.data}");
+    debugPrint("[RAW MESSAGE.DATA TYPE] ${message.data.runtimeType}");
+    debugPrint("[RAW MESSAGE.DATA IS EMPTY] ${message.data.isEmpty}");
+    debugPrint("[RAW MESSAGE.DATA LENGTH] ${message.data.length}");
+    if (message.data.isNotEmpty) {
+      message.data.forEach((key, value) {
+        debugPrint("  ├─ $key: $value (${value.runtimeType})");
+      });
+    }
+    debugPrint("[RAW MESSAGE.NOTIFICATION] ${message.notification}");
+    if (message.notification != null) {
+      debugPrint("  ├─ title: ${message.notification!.title}");
+      debugPrint("  ├─ body: ${message.notification!.body}");
+    }
     debugPrint("─────────────────────────────────────────");
 
     // Extract data from multiple possible sources
@@ -263,8 +443,10 @@ class NotificationService {
     
     // Try message.data first
     if (message.data.isNotEmpty) {
-      debugPrint("[DATA SOURCE] Using message.data");
+      debugPrint("[DATA SOURCE] Using message.data (${message.data.length} keys)");
       extractedData.addAll(message.data);
+    } else {
+      debugPrint("[DATA SOURCE] ⚠️ message.data is EMPTY!");
     }
     
     // Also try notification fields if present
@@ -274,8 +456,21 @@ class NotificationService {
       extractedData['notification_body'] = message.notification!.body;
     }
 
-    debugPrint("[EXTRACTED DATA] $extractedData");
+    debugPrint("[EXTRACTED DATA] Keys: ${extractedData.keys.toList()}");
+    debugPrint("[EXTRACTED DATA] Full: $extractedData");
 
+    // Try to detect CALL_BATCH first
+    final batchData = normalizeCallBatchPayload(extractedData);
+    if (batchData != null) {
+      debugPrint("[SUCCESS] ✅ Call batch payload recognized!");
+      await _showBatchNotification(batchData);
+      notificationStream.add(batchData);
+      debugPrint("[NOTIFICATION] Batch notification shown and added to stream");
+      debugPrint("═════════════════════════════════════════");
+      return;
+    }
+
+    // Otherwise, try single LEAD_CALL
     final leadData = normalizeLeadCallPayload(extractedData);
     
     debugPrint("[PAYLOAD CHECK]");
@@ -337,6 +532,53 @@ class NotificationService {
       notificationDetails: notificationDetails,
       payload: jsonEncode(data),
     );
+  }
+
+  Future<void> _showBatchNotification(Map<String, dynamic> data) async {
+    final totalLeads = data['total_leads'] ?? 0;
+    final batchName = data['call_batch_name'] ?? 'Call Batch';
+    final notificationId = 'batch_$batchName'.hashCode.abs() & 0x7fffffff;
+
+    final AndroidNotificationDetails androidNotificationDetails =
+        AndroidNotificationDetails(
+      'high_importance_channel',
+      'High Importance Notifications',
+      channelDescription: 'This channel is used for important notifications.',
+      importance: Importance.max,
+      priority: Priority.high,
+      enableVibration: true,
+      enableLights: true,
+      playSound: true,
+      fullScreenIntent: true,
+      styleInformation: BigTextStyleInformation(
+        'Call Batch with $totalLeads lead calls ready to process',
+        htmlFormatBigText: true,
+        contentTitle: 'Call Batch Arrived',
+        summaryText: 'Batch: $batchName',
+      ),
+    );
+
+    const DarwinNotificationDetails iOSNotificationDetails =
+        DarwinNotificationDetails(
+      presentSound: true,
+      presentBadge: true,
+      presentAlert: true,
+      interruptionLevel: InterruptionLevel.timeSensitive,
+    );
+
+    final NotificationDetails notificationDetails = NotificationDetails(
+      android: androidNotificationDetails,
+      iOS: iOSNotificationDetails,
+    );
+
+    await _flutterLocalNotificationsPlugin.show(
+      id: notificationId,
+      title: 'Call Batch Arrived',
+      body: '$totalLeads lead calls - Batch: $batchName',
+      notificationDetails: notificationDetails,
+      payload: jsonEncode(data),
+    );
+    debugPrint('[BATCH NOTIFICATION] ✅ Batch notification shown with id: $notificationId');
   }
 
   Future<void> _onNotificationTapped(
@@ -434,17 +676,23 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   debugPrint("[BG] Extracted data: $extractedData");
   debugPrint("[BG][PUSH] payload parsed");
 
+  // Try to detect CALL_BATCH first
+  final batchData = NotificationService.normalizeCallBatchPayload(extractedData);
+  if (batchData != null) {
+    debugPrint("[BG] ✅ Call batch detected");
+    final leads = batchData['leads'] as List<dynamic>? ?? [];
+    debugPrint("[BG][BATCH] Batch contains ${leads.length} leads - queue will be fetched from API");
+    debugPrint("[BG] 🔔 Showing batch notification");
+    await _showBatchNotificationInBackground(flutterLocalNotificationsPlugin, batchData);
+    debugPrint('========== END BACKGROUND MESSAGE HANDLER ==========');
+    return;
+  }
+
+  // Otherwise, process as single LEAD_CALL
   final leadData = NotificationService.normalizeLeadCallPayload(extractedData);
   if (leadData != null) {
-    debugPrint("[BG][QUEUE] queue add started");
-    final queueResult = await CallQueueStorageService.addIfNotPending(leadData);
-    if (!queueResult.success) {
-      debugPrint("[BG][QUEUE] queue add failure: ${queueResult.message}");
-    } else if (queueResult.duplicate) {
-      debugPrint("[BG][QUEUE] duplicate skipped");
-    } else {
-      debugPrint("[BG][QUEUE] queue add success");
-    }
+    debugPrint("[BG][QUEUE] Notification received for: ${leadData['customer_name']}");
+    debugPrint("[BG][QUEUE] Queue will be refreshed from API");
     debugPrint("[BG] ✅ Showing notification for: ${leadData['customer_name']}");
     await _showCallNotificationInBackground(flutterLocalNotificationsPlugin, leadData);
   } else {
@@ -503,6 +751,55 @@ Future<void> _showCallNotificationInBackground(
     id: notificationId,
     title: 'Incoming Call',
     body: '$customerName - $mobileNo',
+    notificationDetails: notificationDetails,
+    payload: jsonEncode(data),
+  );
+}
+
+Future<void> _showBatchNotificationInBackground(
+  FlutterLocalNotificationsPlugin plugin,
+  Map<String, dynamic> data,
+) async {
+  final totalLeads = data['total_leads'] ?? 0;
+  final batchName = data['call_batch_name'] ?? 'Call Batch';
+  final notificationId = 'batch_$batchName'.hashCode.abs() & 0x7fffffff;
+
+  final AndroidNotificationDetails androidNotificationDetails =
+      AndroidNotificationDetails(
+    'high_importance_channel',
+    'High Importance Notifications',
+    channelDescription: 'This channel is used for important notifications.',
+    importance: Importance.max,
+    priority: Priority.high,
+    enableVibration: true,
+    enableLights: true,
+    playSound: true,
+    fullScreenIntent: true,
+    styleInformation: BigTextStyleInformation(
+      'Call Batch with $totalLeads lead calls ready to process',
+      htmlFormatBigText: true,
+      contentTitle: 'Call Batch Arrived',
+      summaryText: 'Batch: $batchName',
+    ),
+  );
+
+  const DarwinNotificationDetails iOSNotificationDetails =
+      DarwinNotificationDetails(
+    presentSound: true,
+    presentBadge: true,
+    presentAlert: true,
+    interruptionLevel: InterruptionLevel.timeSensitive,
+  );
+
+  final NotificationDetails notificationDetails = NotificationDetails(
+    android: androidNotificationDetails,
+    iOS: iOSNotificationDetails,
+  );
+
+  await plugin.show(
+    id: notificationId,
+    title: 'Call Batch Arrived',
+    body: '$totalLeads lead calls - Batch: $batchName',
     notificationDetails: notificationDetails,
     payload: jsonEncode(data),
   );
