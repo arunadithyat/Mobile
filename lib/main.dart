@@ -723,13 +723,6 @@ class _HomePageState extends State<HomePage> {
     final call = callQueue.removeFirst();
     if (call == null || !mounted) return;
 
-    unawaited(
-      CallQueueStorageService.removePendingByKey(
-        docname: call.docname,
-        mobileNo: call.mobileNo,
-      ),
-    );
-
     setState(() { _isLeadCallInProgress = true; });
 
     final result = await Navigator.push(
