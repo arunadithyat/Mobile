@@ -8,7 +8,7 @@
 <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
 <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <application
-        android:label="lead_calling"
+        android:label="SalesGenie"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <meta-data
