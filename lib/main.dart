@@ -690,9 +690,9 @@ class _HomePageState extends State<HomePage> {
         const SnackBar(content: Text("Call flow resumed")),
       );
       
-      // Optionally process queued calls
-      if (callQueue.isNotEmpty) {
-        _showQueueProcessingOption();
+      // Auto-process next pending call directly without showing dialog
+      if (callQueue.pendingCount > 0) {
+        _processFirstQueuedCall();
       }
     } else {
       // Pause call flow for a selected interval
@@ -709,8 +709,8 @@ class _HomePageState extends State<HomePage> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Pause interval ended. Call flow resumed")),
         );
-        if (callQueue.isNotEmpty) {
-          _showQueueProcessingOption();
+        if (callQueue.pendingCount > 0) {
+          _processFirstQueuedCall();
         }
       });
 
@@ -1797,11 +1797,14 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
         debugPrint(
             '[CALL] App resumed after background; pausedDuration=$pausedDuration');
 
-        if (pausedDuration >= const Duration(seconds: 2)) {
+        if (pausedDuration >= const Duration(seconds: 1)) {
           debugPrint(
               '[CALL] Showing completion dialog after resume from call');
           callDurationTimer?.cancel();
           if (mounted) {
+            setState(() {
+              // Unfreeze UI — call is over
+            });
             _handleResumeAfterCall();
           }
           callStarted = false;
@@ -1809,8 +1812,16 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
           _wasBackgroundedDuringCall = false;
           _backgroundedAt = null;
         } else {
+          // App resumed too quickly — user may have cancelled on dialpad
+          // Unfreeze screen so cancel button works
           debugPrint(
-              '[CALL] Resume detected too quickly after pause; skipping completion dialog');
+              '[CALL] Resume detected quickly — treating as dialpad cancel');
+          if (mounted) {
+            setState(() {
+              callStarted = false;
+              callTriggered = false;
+            });
+          }
         }
       }
     }
@@ -1939,7 +1950,23 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
               ElevatedButton(
                 onPressed: () {
                   timer?.cancel();
-                  Navigator.pop(context, {'status': 'cancelled'});
+                  callDurationTimer?.cancel();
+                  _callStateSubscription?.cancel();
+                  if (!callTriggered) {
+                    // Call never launched — go back, keep in queue as cancelled
+                    Navigator.pop(context, {'status': 'cancelled'});
+                  } else if (callStarted) {
+                    // Call launched and in progress — user cancelled from dialpad return
+                    // Show completion dialog so they can log it properly
+                    _showCallCompletionDialog(
+                      dataSource: 'manual_cancel',
+                      permissionGranted: false,
+                      retrievedAttempt: -1,
+                    );
+                  } else {
+                    // Call launched but didn't connect
+                    Navigator.pop(context, {'status': 'cancelled'});
+                  }
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.red,
