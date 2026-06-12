@@ -736,9 +736,22 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _processFirstQueuedCall() async {
-    final call = callQueue.removeFirst();
-    if (call == null || !mounted) return;
+    // Find first PENDING call — do NOT remove it yet.
+    // It only leaves the queue after a successful completion.
+    int? targetIndex;
+    for (int i = 0; i < callQueue.length; i++) {
+      final item = callQueue.get(i);
+      if (item != null && item.isPending) {
+        targetIndex = i;
+        break;
+      }
+    }
+    if (targetIndex == null || !mounted) return;
 
+    final call = callQueue.get(targetIndex);
+    if (call == null) return;
+
+    _processingLock = true;
     setState(() { _isLeadCallInProgress = true; });
 
     final result = await Navigator.push(
@@ -750,15 +763,30 @@ class _HomePageState extends State<HomePage> {
 
     if (!mounted) return;
     setState(() { _isLeadCallInProgress = false; });
+    _processingLock = false;
 
-    // Call was not answered — re-queue it and stop the loop
-    if (result is Map<String, dynamic> && result['status'] == 'not_connected') {
-      await _enqueueLeadCall(call.toMap(), reason: 'not_connected_requeue');
+    // User cancelled (countdown or dialpad) — keep in queue, stop the loop
+    if (result is Map<String, dynamic> && result['status'] == 'cancelled') {
+      debugPrint("[QUEUE] Cancelled — call stays in queue as pending");
+      setState(() {});
       return;
     }
 
-    // Auto-process next call if queue still has items
-    if (callQueue.isNotEmpty) {
+    // Not answered — keep in queue as pending, stop the loop
+    if (result is Map<String, dynamic> && result['status'] == 'not_connected') {
+      debugPrint("[QUEUE] Not connected — call stays in queue as pending");
+      setState(() {});
+      return;
+    }
+
+    // Call completed — NOW remove it from the queue
+    setState(() {
+      callQueue.remove(targetIndex!);
+    });
+    debugPrint("[QUEUE] Call completed — removed from queue");
+
+    // Auto-process next pending call
+    if (callQueue.pendingCount > 0) {
       _processFirstQueuedCall();
     }
   }
