@@ -188,6 +188,23 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool _processingLock = false; // Prevents race condition on simultaneous notifications
   int _currentTab = 0; // 0 = Call Queue, 1 = Call History
   String _pauseReason = "";
+  DateTime? pausedAt;
+  Timer? _pauseTicker;
+
+  String _fmtMmSs(Duration d) {
+    final m = d.inMinutes.toString().padLeft(2, '0');
+    final s = (d.inSeconds % 60).toString().padLeft(2, '0');
+    return "$m:$s";
+  }
+
+  String get _pauseTimerLabel {
+    if (pausedAt == null || pausedUntil == null) return "Paused";
+    final now = DateTime.now();
+    final elapsed = now.difference(pausedAt!);
+    final total = pausedUntil!.difference(pausedAt!);
+    final reason = _pauseReason.isEmpty ? "Paused" : _pauseReason;
+    return "$reason · ${_fmtMmSs(elapsed)} / ${_fmtMmSs(total)}";
+  }
 
   bool get isCallFlowPaused {
     if (pausedUntil == null) return false;
@@ -735,8 +752,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (isCallFlowPaused) {
       // Resume call flow
       _pauseTimer?.cancel();
+      _pauseTicker?.cancel();
       setState(() {
         pausedUntil = null;
+        pausedAt = null;
+        _pauseReason = "";
       });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Call flow resumed")),
@@ -754,12 +774,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       final minutes = picked.value;
 
       _pauseReason = reason;
+      pausedAt = DateTime.now();
+      _pauseTicker?.cancel();
+      _pauseTicker = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (mounted && isCallFlowPaused) setState(() {});
+      });
       final until = DateTime.now().add(Duration(minutes: minutes));
       _pauseTimer?.cancel();
       _pauseTimer = Timer(Duration(minutes: minutes), () {
         if (!mounted) return;
+        _pauseTicker?.cancel();
         setState(() {
           pausedUntil = null;
+          pausedAt = null;
+          _pauseReason = "";
         });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Pause interval ended. Call flow resumed")),
@@ -1044,6 +1072,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _pauseTimer?.cancel();
+    _pauseTicker?.cancel();
     _tokenRefreshSub?.cancel();
     _notificationSub?.cancel();
     super.dispose();
@@ -1517,7 +1546,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               color: Colors.red.shade50,
               child: Text(
-                "${_pauseReason.isEmpty ? 'Paused' : _pauseReason} until: ${pausedUntil!.toLocal().toString().split('.')[0]}",
+                _pauseTimerLabel,
                 style: TextStyle(
                   color: Colors.red.shade700,
                   fontWeight: FontWeight.w600,
