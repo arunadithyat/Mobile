@@ -1237,10 +1237,19 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
     callDurationTimer?.cancel();
     final mobileNo = widget.data["mobile_no"]?.toString() ?? "";
     if (mobileNo.isNotEmpty) {
+      // Give Android time to write the call log entry before reading it.
+      // Reading too early misclassifies attended calls as not_connected.
+      await Future.delayed(const Duration(milliseconds: 1500));
+      if (!mounted) return;
       final callInfo = await _fetchCallInfoWithRetry(mobileNo);
       if (callInfo['found'] == true) {
         final attended = callInfo['attended'] == true;
-        if (!attended) {
+        final dceDuration = callInfo['durationSeconds'] is int
+            ? callInfo['durationSeconds'] as int
+            : int.tryParse(callInfo['durationSeconds']?.toString() ?? '0') ?? 0;
+        // Only auto-skip when truly unanswered: not attended AND zero duration.
+        // Any call with talk time must go through the completion dialog.
+        if (!attended && dceDuration == 0) {
           callStarted = false;
           unawaited(CallLogApi.updateCallLog(
             doctype: widget.data["doctype"]?.toString() ?? '',
@@ -1486,6 +1495,10 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
       return;
     }
 
+    // Give Android time to write the call log entry before reading it.
+    await Future.delayed(const Duration(milliseconds: 1500));
+    if (!mounted) return;
+
     final callInfo = await _fetchCallInfoWithRetry(mobileNo);
     if (callInfo['found'] == true) {
       final attended = callInfo['attended'] == true;
@@ -1493,7 +1506,9 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
           ? callInfo['durationSeconds'] as int
           : int.tryParse(callInfo['durationSeconds']?.toString() ?? '0') ?? 0;
 
-      if (!attended) {
+      // Only auto-skip when truly unanswered: not attended AND zero duration.
+      // Any call with talk time must go through the completion dialog.
+      if (!attended && durationSeconds == 0) {
         // Full ring, no answer — log and return to queue
         unawaited(CallLogApi.updateCallLog(
           doctype: widget.data["doctype"]?.toString() ?? '',
