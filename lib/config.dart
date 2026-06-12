@@ -1,7 +1,7 @@
 class AppConfig {
 
   static const String baseUrl =
-      "https://stage.homegeniegroup.in";
+      "https://erp.itgenie.online";
 
   static const String loginApi =
       "$baseUrl/api/method/login";
