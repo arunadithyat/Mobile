@@ -224,7 +224,8 @@ class _HomePageState extends State<HomePage> {
           callQueue.clearAll();
           if (queueItems.isNotEmpty) {
             for (final item in queueItems) {
-              if (item is CallQueueItem) {
+              if (item is CallQueueItem &&
+                  !callQueue.containsCall(item.docname, item.mobileNo)) {
                 callQueue.addItem(item);
               }
             }
@@ -243,8 +244,17 @@ class _HomePageState extends State<HomePage> {
     Map<String, dynamic> normalized, {
     required String reason,
   }) async {
+    final docname = normalized['docname']?.toString() ?? '';
+    final mobileNo = normalized['mobile_no']?.toString() ?? '';
+
+    // Duplicate guard — same doc + number must not be queued twice
+    if (callQueue.containsCall(docname, mobileNo)) {
+      debugPrint(
+          "[QUEUE][FLOW] ⏭️ Skipped duplicate ($reason) — $docname / $mobileNo already in queue");
+      return;
+    }
+
     debugPrint("[QUEUE][FLOW] Adding to in-memory queue - reason=$reason");
-    // Create CallQueueItem from the normalized data
     final item = CallQueueItem.fromMap(normalized);
     setState(() {
       callQueue.addItem(item);

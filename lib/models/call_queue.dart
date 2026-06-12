@@ -88,6 +88,14 @@ class CallQueue {
     }
   }
 
+  /// Returns true if a call for the same document + mobile number
+  /// is already sitting in the queue (any status).
+  bool containsCall(String docname, String mobileNo) {
+    return _queue.any(
+      (item) => item.docname == docname && item.mobileNo == mobileNo,
+    );
+  }
+
   CallQueueItem? get(int index) {
     if (index >= 0 && index < _queue.length) {
       return _queue[index];
