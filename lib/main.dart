@@ -23,6 +23,7 @@ import 'services/notification_service.dart';
 import 'models/call_queue.dart';
 import 'services/call_history_storage.dart';
 import 'screens/call_history_tab.dart';
+import 'services/message_service.dart';
 
 /// Launches the phone dialer to call the given phone number
 Future<bool> launchPhoneCall(String phoneNumber) async {
@@ -1002,11 +1003,340 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     super.dispose();
   }
 
+  static const List<String> _kpiCategories = [
+    "Hot Leads",
+    "Followup Leads",
+    "Order Followups",
+    "B2B Followups",
+  ];
+
+  int _categoryCount(String category) =>
+      callQueue.getAll().where((c) => c.category == category).length;
+
+  Widget _buildScorecard() {
+    return FutureBuilder<List<CallHistoryEntry>>(
+      future: CallHistoryStorage.getAll(),
+      builder: (context, snapshot) {
+        final now = DateTime.now();
+        final todayCalls = (snapshot.data ?? []).where((e) {
+          final d = e.calledAt.toLocal();
+          return d.year == now.year && d.month == now.month && d.day == now.day;
+        }).length;
+        const target = AppConfig.dailyCallTarget;
+        final progress = target == 0 ? 0.0 : (todayCalls / target).clamp(0.0, 1.0);
+        final met = todayCalls >= target;
+
+        return Card(
+          elevation: 1,
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text("Today's Scorecard",
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                    Text(
+                      "$todayCalls / $target calls",
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: met ? Colors.green : Colors.orange.shade800,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: LinearProgressIndicator(
+                    value: progress,
+                    minHeight: 8,
+                    backgroundColor: Colors.grey.shade200,
+                    color: met ? Colors.green : Colors.orange,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  met
+                      ? "Target achieved! 🎯"
+                      : "${target - todayCalls} more to reach today's target",
+                  style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildKpiGrid() {
+    final colors = {
+      "Hot Leads": Colors.red,
+      "Followup Leads": Colors.orange,
+      "Order Followups": Colors.blue,
+      "B2B Followups": Colors.purple,
+    };
+    return GridView.count(
+      crossAxisCount: 2,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      mainAxisSpacing: 10,
+      crossAxisSpacing: 10,
+      childAspectRatio: 2.2,
+      children: _kpiCategories.map((cat) {
+        final color = colors[cat] ?? Colors.teal;
+        final count = _categoryCount(cat);
+        return Card(
+          elevation: 1,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              children: [
+                Container(
+                  width: 4,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: color,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("$count",
+                          style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: color)),
+                      Text(cat,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontSize: 11, color: Colors.grey[700])),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  void _showMessageSheet(CallQueueItem call) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text("Message ${call.customerName}",
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
+              Text(call.mobileNo,
+                  style: TextStyle(fontSize: 13, color: Colors.grey[600])),
+              const SizedBox(height: 12),
+              ...MessageTemplates.templates.entries.map((t) {
+                final filled =
+                    MessageTemplates.fill(t.value, call.customerName);
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(t.key,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13)),
+                              const SizedBox(height: 2),
+                              Text(filled,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.grey[600])),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.sms, color: Colors.blue),
+                          tooltip: "SMS",
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            MessageService.sendSms(call.mobileNo, filled);
+                          },
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.chat, color: Colors.green),
+                          tooltip: "WhatsApp",
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            MessageService.sendWhatsApp(call.mobileNo, filled);
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCategorizedQueue() {
+    final all = callQueue.getAll();
+    if (all.isEmpty) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Center(
+            child: Column(
+              children: [
+                Icon(Icons.done_all, size: 48, color: Colors.green.shade300),
+                const SizedBox(height: 8),
+                Text("No calls in queue",
+                    style: TextStyle(color: Colors.grey[600])),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Group by category, preserving overall queue order inside each group
+    final grouped = <String, List<MapEntry<int, CallQueueItem>>>{};
+    for (int i = 0; i < all.length; i++) {
+      grouped.putIfAbsent(all[i].category, () => []).add(MapEntry(i, all[i]));
+    }
+    final orderedCats = [
+      ..._kpiCategories.where(grouped.containsKey),
+      ...grouped.keys.where((k) => !_kpiCategories.contains(k)),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text("Call Queue (${all.length})",
+                style: const TextStyle(
+                    fontSize: 15, fontWeight: FontWeight.bold)),
+            ElevatedButton.icon(
+              onPressed: _processFirstQueuedCall,
+              icon: const Icon(Icons.phone, size: 18),
+              label: const Text("Process"),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ...orderedCats.map((cat) {
+          final items = grouped[cat]!;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 8, bottom: 4),
+                child: Row(
+                  children: [
+                    Text(cat,
+                        style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.grey[800])),
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade100,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text("${items.length}",
+                          style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.orange.shade800)),
+                    ),
+                  ],
+                ),
+              ),
+              ...items.asMap().entries.map((entry) {
+                final call = entry.value.value;
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 24,
+                        child: Text("${entry.key + 1}.",
+                            style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.orange.shade800)),
+                      ),
+                      Expanded(
+                        child: Text(call.customerName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600)),
+                      ),
+                      Text(call.mobileNo,
+                          style: TextStyle(
+                              fontSize: 12, color: Colors.grey[700])),
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(Icons.message,
+                            size: 18, color: Colors.teal),
+                        tooltip: "Send SMS / WhatsApp",
+                        onPressed: () => _showMessageSheet(call),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ],
+          );
+        }),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Assigned Opportunities"),
+        title: const Text("One Stop Many Solutions"),
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),
@@ -1079,161 +1409,21 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 ),
               ),
             ),
-          if (kDebugMode)
-          Container(
-            width: double.infinity,
-            margin: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-            child: Card(
-              color: Colors.blueGrey.shade50,
-              child: Padding(
-                padding: const EdgeInsets.all(10),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          "Push Debug",
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: () {
-                            setState(() {
-                              _lastPushReceivedAt = null;
-                              _lastPushSource = "-";
-                              _lastPushAction = "-";
-                              _lastPushRaw = null;
-                              _lastPushNormalized = null;
-                              _pushReceivedCount = 0;
-                            });
-                          },
-                          child: const Text("Clear"),
-                        ),
-                      ],
-                    ),
-                    Text("Count: $_pushReceivedCount"),
-                    Text(
-                      "Last At: ${_lastPushReceivedAt?.toLocal().toString().split('.').first ?? '-'}",
-                    ),
-                    Text("Source: $_lastPushSource"),
-                    Text("Action: $_lastPushAction"),
-                    const SizedBox(height: 6),
-                    Text(
-                      "Raw: ${_lastPushRaw == null ? '-' : jsonEncode(_lastPushRaw)}",
-                      style: const TextStyle(fontSize: 11),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      "Normalized: ${_lastPushNormalized == null ? '-' : jsonEncode(_lastPushNormalized)}",
-                      style: const TextStyle(fontSize: 11),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          
-          // Call Queue Section
-          if (callQueue.isNotEmpty)
-            Container(
-              color: Colors.orange.shade50,
+          Expanded(
+            child: SingleChildScrollView(
               padding: const EdgeInsets.all(12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        children: [
-                          const Icon(Icons.hourglass_empty, color: Colors.orange),
-                          const SizedBox(width: 8),
-                          Text(
-                            "Queued Calls: ${callQueue.length}",
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.orange,
-                            ),
-                          ),
-                        ],
-                      ),
-                      ElevatedButton.icon(
-                        onPressed: _processFirstQueuedCall,
-                        icon: const Icon(Icons.phone),
-                        label: const Text("Process"),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  ListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: callQueue.length,
-                    itemBuilder: (context, index) {
-                      final call = callQueue.get(index);
-                      if (call == null) return const SizedBox.shrink();
-                      final isCancelled = call.isCancelled;
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 3),
-                        child: Row(
-                          children: [
-                            SizedBox(
-                              width: 28,
-                              child: Text(
-                                "${index + 1}.",
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 13,
-                                  color: isCancelled ? Colors.grey : Colors.orange.shade800,
-                                ),
-                              ),
-                            ),
-                            Expanded(
-                              child: Text(
-                                call.customerName,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 13,
-                                  color: isCancelled ? Colors.grey : Colors.black87,
-                                  decoration: isCancelled ? TextDecoration.lineThrough : null,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              call.mobileNo,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: isCancelled ? Colors.grey.shade400 : Colors.grey.shade700,
-                              ),
-                            ),
-                            if (isCancelled)
-                              const Padding(
-                                padding: EdgeInsets.only(left: 6),
-                                child: Icon(Icons.cancel_outlined, size: 14, color: Colors.orange),
-                              ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
+                  _buildScorecard(),
+                  const SizedBox(height: 12),
+                  _buildKpiGrid(),
+                  const SizedBox(height: 16),
+                  _buildCategorizedQueue(),
                 ],
               ),
             ),
-          // Queue is the main content — no opportunities list needed
-          const SizedBox.shrink(),
+          ),
         ],
       ),
 

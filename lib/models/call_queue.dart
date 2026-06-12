@@ -7,6 +7,7 @@ class CallQueueItem {
   final String mobileNo;
   final DateTime queuedAt;
   final String autoCall;
+  final String category;
   CallQueueStatus status;
 
   CallQueueItem({
@@ -16,6 +17,7 @@ class CallQueueItem {
     required this.mobileNo,
     required this.queuedAt,
     this.autoCall = "1",
+    this.category = "Hot Leads",
     this.status = CallQueueStatus.pending,
   });
 
@@ -30,6 +32,7 @@ class CallQueueItem {
       'customer_name': customerName,
       'mobile_no': mobileNo,
       'auto_call': autoCall,
+      'category': category,
       'queued_at': queuedAt.toIso8601String(),
       'status': status.name,
     };
@@ -52,6 +55,23 @@ class CallQueueItem {
   }
 
   String get formattedTime => queuedAt.toString().split('.')[0];
+
+  /// Category from payload, else derived from doctype.
+  static String _resolveCategory(Map<String, dynamic> data) {
+    final explicit =
+        (data['category'] ?? data['lead_category'] ?? '').toString().trim();
+    if (explicit.isNotEmpty) return explicit;
+    switch ((data['doctype'] ?? '').toString()) {
+      case 'Lead':
+        return 'Hot Leads';
+      case 'Opportunity':
+        return 'Followup Leads';
+      case 'Sales Order':
+        return 'Order Followups';
+      default:
+        return 'B2B Followups';
+    }
+  }
 }
 
 class CallQueue {
