@@ -2,6 +2,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -197,7 +198,7 @@ class _HomePageState extends State<HomePage> {
     getFcmToken();
     _initializeNotifications();
     _listenForTokenRefresh();
-    fetchOpportunities();
+    // Opportunities are loaded manually via Pull-to-refresh only
   }
 
   Future<void> _requestCallTelemetryPermissions() async {
@@ -961,6 +962,7 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
             ),
+          if (kDebugMode)
           Container(
             width: double.infinity,
             margin: const EdgeInsets.fromLTRB(12, 10, 12, 0),
@@ -1017,6 +1019,7 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
           ),
+          
           // Call Queue Section
           if (callQueue.isNotEmpty)
             Container(
@@ -1055,47 +1058,59 @@ class _HomePageState extends State<HomePage> {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  SizedBox(
-                    height: 80,
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: callQueue.length,
-                      itemBuilder: (context, index) {
-                        final call = callQueue.get(index);
-                        if (call == null) return const SizedBox.shrink();
-                        return Card(
-                          margin: const EdgeInsets.only(right: 8),
-                          child: Padding(
-                            padding: const EdgeInsets.all(8),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  call.customerName,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
+                  ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: callQueue.length,
+                    itemBuilder: (context, index) {
+                      final call = callQueue.get(index);
+                      if (call == null) return const SizedBox.shrink();
+                      final isCancelled = call.isCancelled;
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 3),
+                        child: Row(
+                          children: [
+                            SizedBox(
+                              width: 28,
+                              child: Text(
+                                "${index + 1}.",
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                  color: isCancelled ? Colors.grey : Colors.orange.shade800,
                                 ),
-                                Text(
-                                  call.mobileNo,
-                                  style: const TextStyle(fontSize: 11),
-                                ),
-                                Text(
-                                  call.formattedTime,
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: Colors.grey.shade600,
-                                  ),
-                                ),
-                              ],
+                              ),
                             ),
-                          ),
-                        );
-                      },
-                    ),
+                            Expanded(
+                              child: Text(
+                                call.customerName,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                  color: isCancelled ? Colors.grey : Colors.black87,
+                                  decoration: isCancelled ? TextDecoration.lineThrough : null,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              call.mobileNo,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: isCancelled ? Colors.grey.shade400 : Colors.grey.shade700,
+                              ),
+                            ),
+                            if (isCancelled)
+                              const Padding(
+                                padding: EdgeInsets.only(left: 6),
+                                child: Icon(Icons.cancel_outlined, size: 14, color: Colors.orange),
+                              ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
                 ],
               ),
@@ -1122,12 +1137,7 @@ class _HomePageState extends State<HomePage> {
                                 color: Colors.grey,
                               ),
                             ),
-                            const SizedBox(height: 24),
-                            ElevatedButton.icon(
-                              onPressed: fetchOpportunities,
-                              icon: const Icon(Icons.refresh),
-                              label: const Text("Refresh"),
-                            ),
+
                           ],
                         ),
                       )
@@ -1165,50 +1175,7 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
-      floatingActionButton: Column(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          if (callQueue.isNotEmpty)
-            FloatingActionButton(
-              onPressed: () => _showCallQueueScreen(),
-              tooltip: "Call Queue (${callQueue.length})",
-              heroTag: "queue_btn",
-              backgroundColor: Colors.orange,
-              child: Stack(
-                alignment: Alignment.topRight,
-                children: [
-                  const Icon(Icons.queue_music),
-                  Positioned(
-                    right: -5,
-                    top: -5,
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: const BoxDecoration(
-                        color: Colors.red,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Text(
-                        "${callQueue.length}",
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          const SizedBox(height: 16),
-          FloatingActionButton.extended(
-            onPressed: fetchOpportunities,
-            icon: const Icon(Icons.refresh),
-            label: const Text("Refresh"),
-            heroTag: "refresh_btn",
-          ),
-        ],
-      ),
+
     );
   }
 }
