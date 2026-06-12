@@ -171,8 +171,7 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   String token = "";
   // Opportunities removed — queue is the main data source
-  DateTime? pausedUntil;
-  Timer? _pauseTimer;
+  bool _isPaused = false;
   StreamSubscription<String>? _tokenRefreshSub;
   StreamSubscription<Map<String, dynamic>>? _notificationSub;
   // Fix #2 & #7: Thread-safe duplicate detection with Set<String>
@@ -188,28 +187,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool _processingLock = false; // Prevents race condition on simultaneous notifications
   int _currentTab = 0; // 0 = Call Queue, 1 = Call History
   String _pauseReason = "";
-  DateTime? pausedAt;
-  Timer? _pauseTicker;
 
-  String _fmtMmSs(Duration d) {
-    final m = d.inMinutes.toString().padLeft(2, '0');
-    final s = (d.inSeconds % 60).toString().padLeft(2, '0');
-    return "$m:$s";
-  }
-
-  String get _pauseTimerLabel {
-    if (pausedAt == null || pausedUntil == null) return "Paused";
-    final now = DateTime.now();
-    final elapsed = now.difference(pausedAt!);
-    final total = pausedUntil!.difference(pausedAt!);
-    final reason = _pauseReason.isEmpty ? "Paused" : _pauseReason;
-    return "$reason · ${_fmtMmSs(elapsed)} / ${_fmtMmSs(total)}";
-  }
-
-  bool get isCallFlowPaused {
-    if (pausedUntil == null) return false;
-    return DateTime.now().isBefore(pausedUntil!);
-  }
+  bool get isCallFlowPaused => _isPaused;
 
   @override
   void initState() {
@@ -751,11 +730,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Future<void> toggleCallFlow() async {
     if (isCallFlowPaused) {
       // Resume call flow
-      _pauseTimer?.cancel();
-      _pauseTicker?.cancel();
       setState(() {
-        pausedUntil = null;
-        pausedAt = null;
+        _isPaused = false;
         _pauseReason = "";
       });
       ScaffoldMessenger.of(context).showSnackBar(
@@ -767,55 +743,25 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         _processFirstQueuedCall();
       }
     } else {
-      // Pause call flow for a selected reason
-      final picked = await _selectPauseReason();
-      if (picked == null || !mounted) return;
-      final reason = picked.key;
-      final minutes = picked.value;
-
-      _pauseReason = reason;
-      pausedAt = DateTime.now();
-      _pauseTicker?.cancel();
-      _pauseTicker = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (mounted && isCallFlowPaused) setState(() {});
-      });
-      final until = DateTime.now().add(Duration(minutes: minutes));
-      _pauseTimer?.cancel();
-      _pauseTimer = Timer(Duration(minutes: minutes), () {
-        if (!mounted) return;
-        _pauseTicker?.cancel();
-        setState(() {
-          pausedUntil = null;
-          pausedAt = null;
-          _pauseReason = "";
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Pause interval ended. Call flow resumed")),
-        );
-        if (callQueue.pendingCount > 0) {
-          _processFirstQueuedCall();
-        }
-      });
+      // Pause call flow with a reason — stays paused until manual resume
+      final reason = await _selectPauseReason();
+      if (reason == null || !mounted) return;
 
       setState(() {
-        pausedUntil = until;
+        _isPaused = true;
+        _pauseReason = reason;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("$reason — paused for $minutes minute(s)")),
+        SnackBar(content: Text("Call flow paused — $reason")),
       );
     }
   }
 
-  /// Pause reasons mapped to their default durations (minutes).
-  static const Map<String, int> _pauseReasons = {
-    "Break": 15,
-    "Lunch": 45,
-    "Meeting": 30,
-  };
+  static const List<String> _pauseReasons = ["Break", "Lunch", "Meeting"];
 
-  Future<MapEntry<String, int>?> _selectPauseReason() async {
+  Future<String?> _selectPauseReason() async {
     String selected = "Break";
-    return showDialog<MapEntry<String, int>>(
+    return showDialog<String>(
       context: context,
       builder: (_) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
@@ -835,11 +781,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     borderRadius: BorderRadius.circular(8),
                   ),
                 ),
-                items: _pauseReasons.entries
-                    .map((e) => DropdownMenuItem(
-                          value: e.key,
-                          child: Text("${e.key}  (${e.value} min)"),
-                        ))
+                items: _pauseReasons
+                    .map((r) => DropdownMenuItem(value: r, child: Text(r)))
                     .toList(),
                 onChanged: (v) {
                   if (v != null) setDialogState(() => selected = v);
@@ -853,10 +796,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               child: const Text("Cancel"),
             ),
             ElevatedButton(
-              onPressed: () => Navigator.pop(
-                context,
-                MapEntry(selected, _pauseReasons[selected]!),
-              ),
+              onPressed: () => Navigator.pop(context, selected),
               child: const Text("Pause"),
             ),
           ],
@@ -1071,8 +1011,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _pauseTimer?.cancel();
-    _pauseTicker?.cancel();
     _tokenRefreshSub?.cancel();
     _notificationSub?.cancel();
     super.dispose();
@@ -1540,13 +1478,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               ],
             ),
           ),
-          if (isCallFlowPaused && pausedUntil != null)
+          if (isCallFlowPaused && _pauseReason.isNotEmpty)
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               color: Colors.red.shade50,
               child: Text(
-                _pauseTimerLabel,
+                "On $_pauseReason",
                 style: TextStyle(
                   color: Colors.red.shade700,
                   fontWeight: FontWeight.w600,
