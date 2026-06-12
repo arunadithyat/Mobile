@@ -21,6 +21,8 @@ import 'api/call_queue_api.dart';
 import 'config.dart';
 import 'services/notification_service.dart';
 import 'models/call_queue.dart';
+import 'services/call_history_storage.dart';
+import 'screens/call_history_tab.dart';
 
 /// Launches the phone dialer to call the given phone number
 Future<bool> launchPhoneCall(String phoneNumber) async {
@@ -183,6 +185,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   final CallQueue callQueue = CallQueue();
   bool _isLeadCallInProgress = false;
   bool _processingLock = false; // Prevents race condition on simultaneous notifications
+  int _currentTab = 0; // 0 = Call Queue, 1 = Call History
 
   bool get isCallFlowPaused {
     if (pausedUntil == null) return false;
@@ -1013,7 +1016,24 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ],
       ),
       drawer: _buildDrawer(),
-      body: Column(
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _currentTab,
+        onTap: (i) => setState(() => _currentTab = i),
+        selectedItemColor: Colors.green,
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.phone_in_talk),
+            label: "Call Queue",
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.history),
+            label: "History",
+          ),
+        ],
+      ),
+      body: _currentTab == 1
+          ? const CallHistoryTab()
+          : Column(
         children: [
           // Call Flow Status Bar
           Container(
@@ -1335,6 +1355,15 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
         // Any call with talk time must go through the completion dialog.
         if (!attended && dceDuration == 0) {
           callStarted = false;
+          unawaited(CallHistoryStorage.add(CallHistoryEntry(
+            customerName: widget.data["customer_name"]?.toString() ?? '',
+            mobileNo: mobileNo,
+            doctype: widget.data["doctype"]?.toString() ?? '',
+            docname: widget.data["docname"]?.toString() ?? '',
+            status: 'Not Answered',
+            durationSeconds: 0,
+            calledAt: _initiatedAt ?? DateTime.now(),
+          )));
           unawaited(CallLogApi.updateCallLog(
             doctype: widget.data["doctype"]?.toString() ?? '',
             docname: widget.data["docname"]?.toString() ?? '',
@@ -1433,6 +1462,20 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
     final mobileNo = widget.data["mobile_no"]?.toString() ?? "";
     callDurationTimer?.cancel();
     final duration = callDuration ?? _getCallDuration();
+
+    // Record in local call history (status from device log, e.g. Connected/Missed)
+    unawaited(CallHistoryStorage.add(CallHistoryEntry(
+      customerName: customerName,
+      mobileNo: mobileNo,
+      doctype: doctype,
+      docname: docname,
+      status: (callStatus == null || callStatus.isEmpty || callStatus == 'Unknown')
+          ? 'Connected'
+          : callStatus,
+      durationSeconds: duration.inSeconds,
+      calledAt: _initiatedAt ?? DateTime.now(),
+    )));
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -1594,6 +1637,15 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
       // Any call with talk time must go through the completion dialog.
       if (!attended && durationSeconds == 0) {
         // Full ring, no answer — log and return to queue
+        unawaited(CallHistoryStorage.add(CallHistoryEntry(
+          customerName: widget.data["customer_name"]?.toString() ?? '',
+          mobileNo: mobileNo,
+          doctype: widget.data["doctype"]?.toString() ?? '',
+          docname: widget.data["docname"]?.toString() ?? '',
+          status: 'Not Answered',
+          durationSeconds: 0,
+          calledAt: _initiatedAt ?? DateTime.now(),
+        )));
         unawaited(CallLogApi.updateCallLog(
           doctype: widget.data["doctype"]?.toString() ?? '',
           docname: widget.data["docname"]?.toString() ?? '',
