@@ -258,6 +258,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       Duration(seconds: 4),
     ];
 
+    final existingKeys = callQueue
+        .getAll()
+        .map((item) => '${item.docname}::${item.mobileNo}')
+        .toSet();
     var queueCount = 0;
     for (var attempt = 0; attempt < retryDelays.length; attempt++) {
       final delay = retryDelays[attempt];
@@ -270,6 +274,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         '$queueCount item(s)',
       );
       if (queueCount > 0) break;
+    }
+
+    final addedItems = callQueue.getAll().where((item) {
+      return !existingKeys.contains('${item.docname}::${item.mobileNo}');
+    }).toList();
+
+    if (autoProcess && addedItems.isNotEmpty) {
+      await NotificationService().showVerifiedQueueNotification(
+        addedCount: addedItems.length,
+        customerName: addedItems.first.customerName,
+      );
     }
 
     final firstQueueItem = callQueue.get(0);
