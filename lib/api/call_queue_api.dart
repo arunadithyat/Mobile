@@ -9,9 +9,9 @@ import '../models/call_queue.dart';
 
 class CallQueueApi {
   static bool _validateQueueItem(Map<String, dynamic> item) {
-    final docname = item['name']?.toString() ?? item['docname']?.toString() ?? '';
+    final docname =
+        item['name']?.toString() ?? item['docname']?.toString() ?? '';
     final mobileNo = item['mobile_no']?.toString() ?? '';
-    final customerName = item['customer_name']?.toString() ?? item['name']?.toString() ?? '';
 
     if (docname.isEmpty || mobileNo.isEmpty) {
       debugPrint('[QUEUE_API] ❌ Invalid queue item - missing required fields');
@@ -19,6 +19,22 @@ class CallQueueApi {
     }
 
     return true;
+  }
+
+  static List<dynamic> _extractQueueList(dynamic jsonData) {
+    if (jsonData is List) return jsonData;
+    if (jsonData is! Map) return const [];
+
+    for (final key in const ['data', 'message', 'queue', 'items', 'results']) {
+      final value = jsonData[key];
+      if (value is List && value.isNotEmpty) return value;
+      if (value is Map) {
+        final nested = _extractQueueList(value);
+        if (nested.isNotEmpty) return nested;
+      }
+    }
+
+    return const [];
   }
 
   static Future<Map<String, dynamic>> getCallQueue() async {
@@ -33,19 +49,18 @@ class CallQueueApi {
           "success": false,
           "message": "Session not found. Please login again.",
           "queue": [],
-          "items": []
+          "items": [],
         };
       }
 
       debugPrint('[QUEUE_API] 📡 Fetching call queue from API...');
 
-      final response = await http.get(
-        Uri.parse(AppConfig.callQueueApi),
-        headers: {
-          'Content-Type': 'application/json',
-          'Cookie': cookie,
-        },
-      ).timeout(const Duration(seconds: 10));
+      final response = await http
+          .get(
+            Uri.parse(AppConfig.callQueueApi),
+            headers: {'Content-Type': 'application/json', 'Cookie': cookie},
+          )
+          .timeout(const Duration(seconds: 10));
 
       debugPrint('[QUEUE_API] Response status: ${response.statusCode}');
 
@@ -53,29 +68,18 @@ class CallQueueApi {
         final jsonData = jsonDecode(response.body);
         debugPrint('[QUEUE_API] Response body: $jsonData');
 
-        // Handle different response formats
-        List<dynamic> queueList = [];
-        
-        if (jsonData is Map<String, dynamic>) {
-          // Check various possible response structures
-          if (jsonData['data'] is List) {
-            queueList = jsonData['data'] as List<dynamic>;
-          } else if (jsonData['message'] is List) {
-            queueList = jsonData['message'] as List<dynamic>;
-          } else if (jsonData['queue'] is List) {
-            queueList = jsonData['queue'] as List<dynamic>;
-          }
-        } else if (jsonData is List) {
-          queueList = jsonData;
-        }
+        final queueList = _extractQueueList(jsonData);
 
         // Filter and validate queue items
         final validQueue = <CallQueueItem>[];
         for (final item in queueList) {
-          if (item is Map<String, dynamic>) {
-            if (_validateQueueItem(item)) {
+          if (item is Map) {
+            final queueMap = item.map(
+              (key, value) => MapEntry(key.toString(), value),
+            );
+            if (_validateQueueItem(queueMap)) {
               try {
-                final queueItem = CallQueueItem.fromMap(item);
+                final queueItem = CallQueueItem.fromMap(queueMap);
                 validQueue.add(queueItem);
               } catch (e) {
                 debugPrint('[QUEUE_API] ⚠️ Failed to parse queue item: $e');
@@ -84,7 +88,9 @@ class CallQueueApi {
           }
         }
 
-        debugPrint('[QUEUE_API] ✅ Queue fetched successfully - ${validQueue.length} items');
+        debugPrint(
+          '[QUEUE_API] ✅ Queue fetched successfully - ${validQueue.length} items',
+        );
         return {
           "success": true,
           "message": "Queue fetched successfully",
@@ -98,7 +104,7 @@ class CallQueueApi {
           "success": false,
           "message": "Session expired. Please login again.",
           "queue": [],
-          "items": []
+          "items": [],
         };
       } else {
         debugPrint('[QUEUE_API] ❌ API error - ${response.statusCode}');
@@ -106,7 +112,7 @@ class CallQueueApi {
           "success": false,
           "message": "Failed to fetch queue. Status: ${response.statusCode}",
           "queue": [],
-          "items": []
+          "items": [],
         };
       }
     } on http.ClientException catch (e) {
@@ -115,7 +121,7 @@ class CallQueueApi {
         "success": false,
         "message": "Network error. Please check your connection.",
         "queue": [],
-        "items": []
+        "items": [],
       };
     } catch (e) {
       debugPrint('[QUEUE_API] ❌ Unexpected error: $e');
@@ -123,7 +129,7 @@ class CallQueueApi {
         "success": false,
         "message": "Error: $e",
         "queue": [],
-        "items": []
+        "items": [],
       };
     }
   }

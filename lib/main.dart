@@ -172,7 +172,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool _processingLock =
       false; // Prevents race condition on simultaneous notifications
   bool _queueRefreshInProgress = false;
-  bool _autoProcessAfterRefresh = false;
   AppLifecycleState _appLifecycleState = AppLifecycleState.resumed;
 
   bool get _isAppActive => _appLifecycleState == AppLifecycleState.resumed;
@@ -213,24 +212,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     debugPrint("[PERM] ✅ Permission request cycle complete");
   }
 
-  Future<void> _loadPendingQueue({bool autoProcess = false}) async {
-    if (_queueRefreshInProgress) {
-      _autoProcessAfterRefresh = _autoProcessAfterRefresh || autoProcess;
-      return;
-    }
+  Future<int?> _loadPendingQueue() async {
+    if (_queueRefreshInProgress) return null;
     _queueRefreshInProgress = true;
-    var shouldAutoProcess = false;
     try {
       debugPrint("[QUEUE][LOAD] Fetching call queue from API...");
       final result = await CallQueueApi.getCallQueue();
-      if (!mounted) return;
+      if (!mounted) return null;
 
       if (result['success'] == true) {
         final queueItems = result['queue'] as List<dynamic>? ?? [];
-        final firstQueueItem =
-            queueItems.isNotEmpty && queueItems.first is CallQueueItem
-            ? queueItems.first as CallQueueItem
-            : null;
         setState(() {
           callQueue.clearAll();
           if (queueItems.isNotEmpty) {
@@ -245,14 +236,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           "[QUEUE][LOAD] ✅ Loaded queue from API - ${queueItems.length} items",
         );
 
-        shouldAutoProcess =
-            (autoProcess || _autoProcessAfterRefresh) &&
-            firstQueueItem != null &&
-            firstQueueItem.autoCall == '1' &&
-            _isAppActive &&
-            !isCallFlowPaused &&
-            !_isLeadCallInProgress &&
-            !_processingLock;
+        return queueItems.length;
       } else {
         setState(callQueue.clearAll);
         debugPrint("[QUEUE][LOAD] ❌ API error: ${result['message']}");
@@ -262,10 +246,38 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       debugPrint("[QUEUE][LOAD] ❌ Failed to load queue from API: $e");
     } finally {
       _queueRefreshInProgress = false;
-      _autoProcessAfterRefresh = false;
+    }
+    return callQueue.length;
+  }
+
+  Future<void> _refreshQueueAfterPush({required bool autoProcess}) async {
+    const retryDelays = <Duration>[
+      Duration.zero,
+      Duration(seconds: 1),
+      Duration(seconds: 2),
+      Duration(seconds: 4),
+    ];
+
+    var queueCount = 0;
+    for (var attempt = 0; attempt < retryDelays.length; attempt++) {
+      final delay = retryDelays[attempt];
+      if (delay > Duration.zero) await Future.delayed(delay);
+      if (!mounted) return;
+
+      queueCount = await _loadPendingQueue() ?? queueCount;
+      debugPrint(
+        '[QUEUE][PUSH] endpoint attempt ${attempt + 1}/${retryDelays.length}: '
+        '$queueCount item(s)',
+      );
+      if (queueCount > 0) break;
     }
 
-    if (shouldAutoProcess) {
+    final firstQueueItem = callQueue.get(0);
+    if (autoProcess &&
+        queueCount > 0 &&
+        firstQueueItem?.autoCall == '1' &&
+        _isAppActive &&
+        !isCallFlowPaused) {
       await _processFirstQueuedCall();
     }
   }
@@ -417,7 +429,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     debugPrint(
       '[PUSH] delivery=$deliveryContext source=$source; refreshing API queue',
     );
-    await _loadPendingQueue(
+    await _refreshQueueAfterPush(
       autoProcess: isForegroundDelivery && _isAppActive && !isCallFlowPaused,
     );
   }
