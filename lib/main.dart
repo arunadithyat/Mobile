@@ -13,6 +13,7 @@ import 'package:lead_calling/screens/call_completion_dialog.dart';
 import 'package:lead_calling/screens/call_queue_screen.dart';
 import 'package:lead_calling/screens/webview_screen.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api/device_api.dart';
 import 'api/login_api.dart';
@@ -164,7 +165,7 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   String token = "";
   // Opportunities removed — queue is the main data source
   DateTime? pausedUntil;
@@ -191,12 +192,46 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    _loadPendingQueue();
-    _requestCallTelemetryPermissions();
-    getFcmToken();
-    _initializeNotifications();
+    WidgetsBinding.instance.addObserver(this);
+    _bootstrap();
+  }
+
+  /// Permissions must be requested SEQUENTIALLY — Android silently drops a
+  /// permission dialog if another one is already showing. This is why the
+  /// notification permission was never asked on fresh installs.
+  Future<void> _bootstrap() async {
+    await _requestCallTelemetryPermissions();
+    final notifStatus = await Permission.notification.request();
+    debugPrint("[BOOT] Notification permission: $notifStatus");
+    await getFcmToken();
+    await _initializeNotifications();
     _listenForTokenRefresh();
+    await _loadPendingQueue();
+    await _drainBackgroundQueuedCalls();
     // Opportunities are loaded manually via Pull-to-refresh only
+  }
+
+  /// Calls received via FCM while the app was in background/killed are
+  /// persisted by the background handler. Drain them into the queue here.
+  Future<void> _drainBackgroundQueuedCalls() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final stored = prefs.getStringList('bg_pending_calls') ?? [];
+      if (stored.isEmpty) return;
+      await prefs.remove('bg_pending_calls');
+      debugPrint("[QUEUE][BG] Draining ${stored.length} background call(s) into queue");
+      for (final s in stored) {
+        try {
+          final data = Map<String, dynamic>.from(jsonDecode(s) as Map);
+          await _enqueueLeadCall(data, reason: 'background_fcm');
+        } catch (e) {
+          debugPrint("[QUEUE][BG] Failed to parse stored call: $e");
+        }
+      }
+      if (mounted) setState(() {});
+    } catch (e) {
+      debugPrint("[QUEUE][BG] Drain error: $e");
+    }
   }
 
   Future<void> _requestCallTelemetryPermissions() async {
@@ -908,7 +943,17 @@ class _HomePageState extends State<HomePage> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) {
+      // Pick up any calls that arrived while we were backgrounded
+      _drainBackgroundQueuedCalls();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pauseTimer?.cancel();
     _tokenRefreshSub?.cancel();
     _notificationSub?.cancel();

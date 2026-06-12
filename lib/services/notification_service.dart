@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 
 class NotificationService {
@@ -605,6 +606,35 @@ class NotificationService {
   }
 }
 
+/// Persists a lead call received while the app was backgrounded/killed.
+/// The main isolate drains 'bg_pending_calls' into the queue on launch/resume.
+Future<void> _persistBackgroundLeadCall(Map<String, dynamic> leadData) async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final list = prefs.getStringList('bg_pending_calls') ?? [];
+    // Skip if same docname+mobile already stored
+    final docname = leadData['docname']?.toString() ?? '';
+    final mobile = leadData['mobile_no']?.toString() ?? '';
+    final exists = list.any((s) {
+      try {
+        final m = jsonDecode(s) as Map;
+        return m['docname'] == docname && m['mobile_no'] == mobile;
+      } catch (_) {
+        return false;
+      }
+    });
+    if (exists) {
+      debugPrint('[BG][QUEUE] Skipped duplicate persist: $docname / $mobile');
+      return;
+    }
+    list.add(jsonEncode(leadData));
+    await prefs.setStringList('bg_pending_calls', list);
+    debugPrint('[BG][QUEUE] Persisted call for queue: $docname / $mobile (total: ${list.length})');
+  } catch (e) {
+    debugPrint('[BG][QUEUE] Persist failed: $e');
+  }
+}
+
 // Top-level function to handle background messages
 // BUG FIX #2 & #3: Moved from NotificationService.initialize() to main.dart
 // This function will be registered before runApp() in main()
@@ -681,7 +711,18 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   if (batchData != null) {
     debugPrint("[BG] ✅ Call batch detected");
     final leads = batchData['leads'] as List<dynamic>? ?? [];
-    debugPrint("[BG][BATCH] Batch contains ${leads.length} leads - queue will be fetched from API");
+    debugPrint("[BG][BATCH] Batch contains ${leads.length} leads - persisting for queue");
+    // Persist every lead so the app queues them on next open/resume
+    for (final lead in leads) {
+      if (lead is Map) {
+        final normalized = NotificationService.normalizeLeadCallPayload(
+          Map<String, dynamic>.from(lead),
+        );
+        if (normalized != null) {
+          await _persistBackgroundLeadCall(normalized);
+        }
+      }
+    }
     debugPrint("[BG] 🔔 Showing batch notification");
     await _showBatchNotificationInBackground(flutterLocalNotificationsPlugin, batchData);
     debugPrint('========== END BACKGROUND MESSAGE HANDLER ==========');
@@ -692,7 +733,9 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   final leadData = NotificationService.normalizeLeadCallPayload(extractedData);
   if (leadData != null) {
     debugPrint("[BG][QUEUE] Notification received for: ${leadData['customer_name']}");
-    debugPrint("[BG][QUEUE] Queue will be refreshed from API");
+    // Persist so the app queues it on next open/resume — auto-call not
+    // required in background, but the call must not be lost
+    await _persistBackgroundLeadCall(leadData);
     debugPrint("[BG] ✅ Showing notification for: ${leadData['customer_name']}");
     await _showCallNotificationInBackground(flutterLocalNotificationsPlugin, leadData);
   } else {
