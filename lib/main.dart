@@ -187,6 +187,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool _isLeadCallInProgress = false;
   bool _processingLock = false; // Prevents race condition on simultaneous notifications
   int _currentTab = 0; // 0 = Call Queue, 1 = Call History
+  String _pauseReason = "";
 
   bool get isCallFlowPaused {
     if (pausedUntil == null) return false;
@@ -746,10 +747,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         _processFirstQueuedCall();
       }
     } else {
-      // Pause call flow for a selected interval
-      final minutes = await _selectPauseMinutes();
-      if (minutes == null || minutes <= 0 || !mounted) return;
+      // Pause call flow for a selected reason
+      final picked = await _selectPauseReason();
+      if (picked == null || !mounted) return;
+      final reason = picked.key;
+      final minutes = picked.value;
 
+      _pauseReason = reason;
       final until = DateTime.now().add(Duration(minutes: minutes));
       _pauseTimer?.cancel();
       _pauseTimer = Timer(Duration(minutes: minutes), () {
@@ -769,30 +773,66 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         pausedUntil = until;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Call flow paused for $minutes minute(s)")),
+        SnackBar(content: Text("$reason — paused for $minutes minute(s)")),
       );
     }
   }
 
-  Future<int?> _selectPauseMinutes() async {
-    // Fix #9: Use pauseIntervalOptions from config
-    return showDialog<int>(
+  /// Pause reasons mapped to their default durations (minutes).
+  static const Map<String, int> _pauseReasons = {
+    "Break": 15,
+    "Lunch": 45,
+    "Meeting": 30,
+  };
+
+  Future<MapEntry<String, int>?> _selectPauseReason() async {
+    String selected = "Break";
+    return showDialog<MapEntry<String, int>>(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Pause Call Flow"),
-        content: const Text("Select pause interval"),
-        actions: [
-          ...AppConfig.pauseIntervalOptions.map(
-            (minutes) => TextButton(
-              onPressed: () => Navigator.pop(context, minutes),
-              child: Text("$minutes min"),
+      builder: (_) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text("Pause Call Flow"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text("Select reason", style: TextStyle(fontSize: 13)),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: selected,
+                decoration: InputDecoration(
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                items: _pauseReasons.entries
+                    .map((e) => DropdownMenuItem(
+                          value: e.key,
+                          child: Text("${e.key}  (${e.value} min)"),
+                        ))
+                    .toList(),
+                onChanged: (v) {
+                  if (v != null) setDialogState(() => selected = v);
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Cancel"),
             ),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Cancel"),
-          ),
-        ],
+            ElevatedButton(
+              onPressed: () => Navigator.pop(
+                context,
+                MapEntry(selected, _pauseReasons[selected]!),
+              ),
+              child: const Text("Pause"),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -834,9 +874,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       }
     }
     if (targetIndex == null || !mounted) return;
+    await _processQueuedCallAt(targetIndex);
+  }
 
+  /// Calls a specific queued item (used by the per-row phone button).
+  Future<void> _processQueuedCallAt(int targetIndex) async {
+    if (!mounted) return;
     final call = callQueue.get(targetIndex);
-    if (call == null) return;
+    if (call == null || !call.isPending) return;
+    if (_isLeadCallInProgress || _processingLock) return;
 
     _processingLock = true;
     setState(() { _isLeadCallInProgress = true; });
@@ -858,7 +904,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (result is Map<String, dynamic> && result['status'] == 'cancelled') {
       debugPrint("[QUEUE] Cancelled — moved to end of queue, processing next");
       setState(() {
-        callQueue.moveToEnd(targetIndex!);
+        callQueue.moveToEnd(targetIndex);
       });
       if (callQueue.pendingCount > 1) {
         _processFirstQueuedCall();
@@ -870,7 +916,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (result is Map<String, dynamic> && result['status'] == 'not_connected') {
       debugPrint("[QUEUE] Not connected — moved to end of queue, processing next");
       setState(() {
-        callQueue.moveToEnd(targetIndex!);
+        callQueue.moveToEnd(targetIndex);
       });
       if (callQueue.pendingCount > 1) {
         _processFirstQueuedCall();
@@ -880,7 +926,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
     // Call completed — NOW remove it from the queue
     setState(() {
-      callQueue.remove(targetIndex!);
+      callQueue.remove(targetIndex);
     });
     debugPrint("[QUEUE] Call completed — removed from queue");
 
@@ -1013,18 +1059,33 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   int _categoryCount(String category) =>
       callQueue.getAll().where((c) => c.category == category).length;
 
+  String _formatRupees(num v) {
+    final s = v.round().toString();
+    // Indian grouping: 12,34,567
+    if (s.length <= 3) return "₹$s";
+    final last3 = s.substring(s.length - 3);
+    var rest = s.substring(0, s.length - 3);
+    final parts = <String>[];
+    while (rest.length > 2) {
+      parts.insert(0, rest.substring(rest.length - 2));
+      rest = rest.substring(0, rest.length - 2);
+    }
+    if (rest.isNotEmpty) parts.insert(0, rest);
+    return "₹${parts.join(',')},$last3";
+  }
+
   Widget _buildScorecard() {
-    return FutureBuilder<List<CallHistoryEntry>>(
-      future: CallHistoryStorage.getAll(),
+    return FutureBuilder<SharedPreferences>(
+      future: SharedPreferences.getInstance(),
       builder: (context, snapshot) {
-        final now = DateTime.now();
-        final todayCalls = (snapshot.data ?? []).where((e) {
-          final d = e.calledAt.toLocal();
-          return d.year == now.year && d.month == now.month && d.day == now.day;
-        }).length;
-        const target = AppConfig.dailyCallTarget;
-        final progress = target == 0 ? 0.0 : (todayCalls / target).clamp(0.0, 1.0);
-        final met = todayCalls >= target;
+        // Actual collections — stored locally until the collections API
+        // is ready; backend sync can write 'actual_collections'
+        final actual =
+            snapshot.data?.getDouble('actual_collections') ?? 0.0;
+        const target = AppConfig.dailyCollectionTarget;
+        final progress =
+            target == 0 ? 0.0 : (actual / target).clamp(0.0, 1.0);
+        final met = actual >= target;
 
         return Card(
           elevation: 1,
@@ -1036,12 +1097,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text("Today's Scorecard",
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                    const Text("Collections Scorecard",
+                        style: TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.bold)),
                     Text(
-                      "$todayCalls / $target calls",
+                      "${_formatRupees(actual)} / ${_formatRupees(target)}",
                       style: TextStyle(
-                        fontSize: 14,
+                        fontSize: 13,
                         fontWeight: FontWeight.bold,
                         color: met ? Colors.green : Colors.orange.shade800,
                       ),
@@ -1061,10 +1123,55 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 const SizedBox(height: 6),
                 Text(
                   met
-                      ? "Target achieved! 🎯"
-                      : "${target - todayCalls} more to reach today's target",
+                      ? "Collection target achieved! 🎯"
+                      : "${_formatRupees(target - actual)} more to reach target",
                   style: TextStyle(fontSize: 11, color: Colors.grey[600]),
                 ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildConversionCard() {
+    return FutureBuilder<List<CallHistoryEntry>>(
+      future: CallHistoryStorage.getAll(),
+      builder: (context, snapshot) {
+        final all = snapshot.data ?? [];
+        final total = all.length;
+        final connected = all
+            .where((e) => e.status.toLowerCase() == 'connected')
+            .length;
+        final pct = total == 0 ? 0 : ((connected / total) * 100).round();
+        return Card(
+          elevation: 1,
+          child: Padding(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: Row(
+              children: [
+                Icon(Icons.trending_up,
+                    color: pct >= 50 ? Colors.green : Colors.orange,
+                    size: 20),
+                const SizedBox(width: 10),
+                const Text("Conversion",
+                    style: TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.bold)),
+                const Spacer(),
+                Text(
+                  "$pct%",
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: pct >= 50 ? Colors.green : Colors.orange.shade800,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text("($connected/$total connected)",
+                    style:
+                        TextStyle(fontSize: 11, color: Colors.grey[600])),
               ],
             ),
           ),
@@ -1316,6 +1423,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                               fontSize: 12, color: Colors.grey[700])),
                       IconButton(
                         visualDensity: VisualDensity.compact,
+                        icon: const Icon(Icons.call,
+                            size: 18, color: Colors.green),
+                        tooltip: "Call now",
+                        onPressed: () =>
+                            _processQueuedCallAt(entry.value.key),
+                      ),
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
                         icon: const Icon(Icons.message,
                             size: 18, color: Colors.teal),
                         tooltip: "Send SMS / WhatsApp",
@@ -1402,7 +1517,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               color: Colors.red.shade50,
               child: Text(
-                "Paused until: ${pausedUntil!.toLocal().toString().split('.')[0]}",
+                "${_pauseReason.isEmpty ? 'Paused' : _pauseReason} until: ${pausedUntil!.toLocal().toString().split('.')[0]}",
                 style: TextStyle(
                   color: Colors.red.shade700,
                   fontWeight: FontWeight.w600,
@@ -1418,6 +1533,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   _buildScorecard(),
                   const SizedBox(height: 12),
                   _buildKpiGrid(),
+                  const SizedBox(height: 10),
+                  _buildConversionCard(),
                   const SizedBox(height: 16),
                   _buildCategorizedQueue(),
                 ],

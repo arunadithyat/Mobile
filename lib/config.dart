@@ -26,6 +26,6 @@ class AppConfig {
   // Fix #9: Pause interval options moved to config
   static const List<int> pauseIntervalOptions = [5, 15, 30];
 
-  // Daily call target shown in the scorecard (until target API is ready)
-  static const int dailyCallTarget = 25;
+  // Daily collection target (₹) for the scorecard, until target API is ready
+  static const double dailyCollectionTarget = 100000;
 }
