@@ -293,8 +293,19 @@ class _HomePageState extends State<HomePage> {
     debugPrint("     - isSilent: ${settings.authorizationStatus == AuthorizationStatus.provisional}");
     debugPrint("     - isDenied: ${settings.authorizationStatus == AuthorizationStatus.denied}");
 
-    // Get token
-    debugPrint("[FCM] Getting FCM token...");
+    // Force delete cached token on every login so Firebase issues a fresh one.
+    // This ensures the backend upserts (updates existing device entry for this
+    // user+device instead of creating a duplicate on reinstall).
+    debugPrint("[FCM] Deleting cached FCM token to force refresh on login...");
+    try {
+      await messaging.deleteToken();
+      debugPrint("[FCM] Cached token deleted");
+    } catch (e) {
+      debugPrint("[FCM] Could not delete token (non-fatal): $e");
+    }
+
+    // Get fresh token after deletion
+    debugPrint("[FCM] Getting fresh FCM token...");
     final fcmToken = await messaging.getToken();
 
     debugPrint("═════════════════════════════════════════");
@@ -597,9 +608,8 @@ class _HomePageState extends State<HomePage> {
       if (selectedIndex != null && selectedIndex is int) {
         final callItem = callQueue.get(selectedIndex);
         if (callItem != null) {
-          callQueue.remove(selectedIndex);
-          setState(() {});
-
+          // DON'T remove yet — keep in queue until we know the outcome
+          _processingLock = true;
           setState(() { _isLeadCallInProgress = true; });
 
           final result = await Navigator.push(
@@ -611,27 +621,33 @@ class _HomePageState extends State<HomePage> {
 
           if (!mounted) return;
           setState(() { _isLeadCallInProgress = false; });
+          _processingLock = false;
 
-          // User cancelled — keep it in queue as cancelled instead of removing
+          // User cancelled — mark as cancelled, keep in same position
           if (result is Map<String, dynamic> && result['status'] == 'cancelled') {
-            await _enqueueLeadCall(callItem.toMap(), reason: 'queue_call_cancelled');
-            if (!mounted) return;
-            final idx = callQueue.length - 1;
             setState(() {
-              callQueue.markCancelled(idx);
+              callQueue.markCancelled(selectedIndex);
             });
-            debugPrint("[QUEUE] Re-queued cancelled call at index=$idx");
+            debugPrint("[QUEUE] Marked cancelled at index=$selectedIndex");
             return;
           }
 
-          // Call was not answered — re-queue it and stop the loop
+          // Call was not answered — re-queue at same position as cancelled
           if (result is Map<String, dynamic> && result['status'] == 'not_connected') {
-            await _enqueueLeadCall(callItem.toMap(), reason: 'not_connected_requeue');
+            setState(() {
+              callQueue.markCancelled(selectedIndex);
+            });
+            debugPrint("[QUEUE] Not connected — marked cancelled at index=$selectedIndex");
             return;
           }
 
-          // Auto-process next call if queue still has items
-          if (callQueue.isNotEmpty) {
+          // Call completed successfully — now remove it
+          setState(() {
+            callQueue.remove(selectedIndex);
+          });
+
+          // Auto-process next pending call
+          if (callQueue.pendingCount > 0) {
             _processFirstQueuedCall();
           }
         }
