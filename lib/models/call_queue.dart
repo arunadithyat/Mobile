@@ -79,6 +79,15 @@ class CallQueue {
     }
   }
 
+  /// Moves a call to the end of the queue (e.g. after cancel —
+  /// customer not ready, so the team calls the next one first).
+  void moveToEnd(int index) {
+    if (index >= 0 && index < _queue.length) {
+      final item = _queue.removeAt(index);
+      _queue.add(item);
+    }
+  }
+
   CallQueueItem? get(int index) {
     if (index >= 0 && index < _queue.length) {
       return _queue[index];

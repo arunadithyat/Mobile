@@ -765,17 +765,29 @@ class _HomePageState extends State<HomePage> {
     setState(() { _isLeadCallInProgress = false; });
     _processingLock = false;
 
-    // User cancelled (countdown or dialpad) — keep in queue, stop the loop
+    // User cancelled (countdown or dialpad) — customer not ready right now.
+    // Move this call to the END of the queue and continue with the next one,
+    // so the team isn't stuck retrying the same customer.
     if (result is Map<String, dynamic> && result['status'] == 'cancelled') {
-      debugPrint("[QUEUE] Cancelled — call stays in queue as pending");
-      setState(() {});
+      debugPrint("[QUEUE] Cancelled — moved to end of queue, processing next");
+      setState(() {
+        callQueue.moveToEnd(targetIndex!);
+      });
+      if (callQueue.pendingCount > 1) {
+        _processFirstQueuedCall();
+      }
       return;
     }
 
-    // Not answered — keep in queue as pending, stop the loop
+    // Not answered — same treatment: move to end, try the next customer
     if (result is Map<String, dynamic> && result['status'] == 'not_connected') {
-      debugPrint("[QUEUE] Not connected — call stays in queue as pending");
-      setState(() {});
+      debugPrint("[QUEUE] Not connected — moved to end of queue, processing next");
+      setState(() {
+        callQueue.moveToEnd(targetIndex!);
+      });
+      if (callQueue.pendingCount > 1) {
+        _processFirstQueuedCall();
+      }
       return;
     }
 
