@@ -545,16 +545,13 @@ class _HomePageState extends State<HomePage> {
     });
     if (routeResult is Map<String, dynamic> && routeResult['status'] == 'cancelled') {
       // Add to queue as cancelled — keeps position, user can restore and call later
-      final enqueueResult = await _enqueueLeadCall(normalized, reason: "manual_cancel");
+      await _enqueueLeadCall(normalized, reason: "manual_cancel");
       if (!mounted) return;
-      if (enqueueResult != null) {
-        // Find the item just added and mark it cancelled
-        final idx = callQueue.length - 1;
-        setState(() {
-          callQueue.markCancelled(idx);
-        });
-        debugPrint("[QUEUE] Marked cancelled at index=$idx");
-      }
+      final idx = callQueue.length - 1;
+      setState(() {
+        callQueue.markCancelled(idx);
+      });
+      debugPrint("[QUEUE] Marked cancelled at index=$idx");
     }
     setState(() {
       _lastPushAction = "navigated_to_lead_call_screen";
@@ -608,14 +605,13 @@ class _HomePageState extends State<HomePage> {
 
           // User cancelled — keep it in queue as cancelled instead of removing
           if (result is Map<String, dynamic> && result['status'] == 'cancelled') {
-            final enqueueResult = await _enqueueLeadCall(callItem.toMap(), reason: 'queue_call_cancelled');
-            if (enqueueResult != null && mounted) {
-              final idx = callQueue.length - 1;
-              setState(() {
-                callQueue.markCancelled(idx);
-              });
-              debugPrint("[QUEUE] Re-queued cancelled call at index=$idx");
-            }
+            await _enqueueLeadCall(callItem.toMap(), reason: 'queue_call_cancelled');
+            if (!mounted) return;
+            final idx = callQueue.length - 1;
+            setState(() {
+              callQueue.markCancelled(idx);
+            });
+            debugPrint("[QUEUE] Re-queued cancelled call at index=$idx");
             return;
           }
 
