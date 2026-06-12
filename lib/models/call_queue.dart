@@ -38,7 +38,7 @@ class CallQueueItem {
   factory CallQueueItem.fromMap(Map<String, dynamic> data) {
     return CallQueueItem(
       doctype: data['doctype'] ?? '',
-      docname: data['docname'] ?? '',
+      docname: data['docname'] ?? data['name'] ?? '',
       customerName: data['customer_name'] ?? '',
       mobileNo: data['mobile_no'] ?? '',
       queuedAt: data['queued_at'] != null

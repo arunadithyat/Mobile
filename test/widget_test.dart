@@ -5,26 +5,24 @@
 // gestures. You can also use WidgetTester to find child widgets in the widget
 // tree, read text, and verify that the values of widget properties are correct.
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:lead_calling/main.dart';
+import 'package:lead_calling/models/call_queue.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  test('call queue can be replaced with endpoint items', () {
+    final queue = CallQueue();
+    final endpointItem = CallQueueItem.fromMap({
+      'name': 'LEAD-001',
+      'customer_name': 'Test Customer',
+      'mobile_no': '1234567890',
+      'queued_at': '2026-06-12T10:00:00.000',
+    });
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    queue.addItem(endpointItem);
+    expect(queue.length, 1);
+    expect(queue.get(0)?.docname, 'LEAD-001');
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
-
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    queue.clearAll();
+    expect(queue.isEmpty, isTrue);
   });
 }

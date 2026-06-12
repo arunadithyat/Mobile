@@ -1,6 +1,4 @@
-
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,7 +7,6 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:lead_calling/services/auto_dialer.dart';
 import 'package:lead_calling/api/call_log_api.dart';
 import 'package:lead_calling/screens/call_completion_dialog.dart';
-import 'package:lead_calling/screens/call_queue_screen.dart';
 import 'package:lead_calling/screens/webview_screen.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -28,10 +25,10 @@ Future<bool> launchPhoneCall(String phoneNumber) async {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   debugPrint("═════════════════════════════════════════");
   debugPrint("[FIREBASE] Initializing Firebase...");
-  
+
   try {
     await Firebase.initializeApp();
     debugPrint("[FIREBASE] ✅ Firebase initialized successfully");
@@ -39,24 +36,24 @@ void main() async {
     debugPrint("[FIREBASE] ❌ Firebase initialization failed: $e");
     rethrow;
   }
-  
+
   debugPrint("[FIREBASE] Setting up background message handler...");
   // BUG FIX #2: Register background handler BEFORE runApp()
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
   debugPrint("[FIREBASE] ✅ Background handler registered");
-  
+
   debugPrint("[AUTH] Checking session...");
   // Check if user is already logged in
   final isLoggedIn = await LoginApi.checkSession();
   debugPrint("[AUTH] Session check result: isLoggedIn=$isLoggedIn");
-  
+
   debugPrint("═════════════════════════════════════════");
   runApp(MyApp(isLoggedIn: isLoggedIn));
 }
 
 class MyApp extends StatelessWidget {
   final bool isLoggedIn;
-  
+
   const MyApp({super.key, required this.isLoggedIn});
 
   @override
@@ -116,9 +113,7 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Homegenie Call App"),
-      ),
+      appBar: AppBar(title: const Text("Homegenie Call App")),
       body: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -164,7 +159,7 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   String token = "";
   List<Map<String, dynamic>> opportunities = [];
   bool isLoading = true;
@@ -172,17 +167,15 @@ class _HomePageState extends State<HomePage> {
   Timer? _pauseTimer;
   StreamSubscription<String>? _tokenRefreshSub;
   StreamSubscription<Map<String, dynamic>>? _notificationSub;
-  // Fix #2 & #7: Thread-safe duplicate detection with Set<String>
-  Set<String> _recentLeadCalls = {};
-  DateTime? _lastPushReceivedAt;
-  String _lastPushSource = "-";
-  String _lastPushAction = "-";
-  int _pushReceivedCount = 0;
-  Map<String, dynamic>? _lastPushRaw;
-  Map<String, dynamic>? _lastPushNormalized;
   final CallQueue callQueue = CallQueue();
   bool _isLeadCallInProgress = false;
-  bool _processingLock = false; // Prevents race condition on simultaneous notifications
+  bool _processingLock =
+      false; // Prevents race condition on simultaneous notifications
+  bool _queueRefreshInProgress = false;
+  bool _autoProcessAfterRefresh = false;
+  AppLifecycleState _appLifecycleState = AppLifecycleState.resumed;
+
+  bool get _isAppActive => _appLifecycleState == AppLifecycleState.resumed;
 
   bool get isCallFlowPaused {
     if (pausedUntil == null) return false;
@@ -192,6 +185,9 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _appLifecycleState =
+        WidgetsBinding.instance.lifecycleState ?? AppLifecycleState.resumed;
     _loadPendingQueue();
     _requestCallTelemetryPermissions();
     getFcmToken();
@@ -202,25 +198,39 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _requestCallTelemetryPermissions() async {
     debugPrint("[PERM] 🔐 Requesting call telemetry permissions...");
-    
+
     final phoneStatus = await Permission.phone.request();
     debugPrint("[PERM] phone permission: $phoneStatus");
-    debugPrint("[PERM] phone permission granted: ${phoneStatus.isGranted ? '✅ YES' : '❌ NO'}");
-    
+    debugPrint(
+      "[PERM] phone permission granted: ${phoneStatus.isGranted ? '✅ YES' : '❌ NO'}",
+    );
+
     final callLogReady = await AutoDialer.ensureCallLogPermission();
     debugPrint("[PERM] call log permission ready: $callLogReady");
-    debugPrint("[PERM] READ_CALL_LOG permission: ${callLogReady ? '✅ GRANTED' : '❌ DENIED/NOT_REQUESTED'}");
+    debugPrint(
+      "[PERM] READ_CALL_LOG permission: ${callLogReady ? '✅ GRANTED' : '❌ DENIED/NOT_REQUESTED'}",
+    );
     debugPrint("[PERM] ✅ Permission request cycle complete");
   }
 
-  Future<void> _loadPendingQueue() async {
+  Future<void> _loadPendingQueue({bool autoProcess = false}) async {
+    if (_queueRefreshInProgress) {
+      _autoProcessAfterRefresh = _autoProcessAfterRefresh || autoProcess;
+      return;
+    }
+    _queueRefreshInProgress = true;
+    var shouldAutoProcess = false;
     try {
       debugPrint("[QUEUE][LOAD] Fetching call queue from API...");
       final result = await CallQueueApi.getCallQueue();
       if (!mounted) return;
-      
+
       if (result['success'] == true) {
         final queueItems = result['queue'] as List<dynamic>? ?? [];
+        final firstQueueItem =
+            queueItems.isNotEmpty && queueItems.first is CallQueueItem
+            ? queueItems.first as CallQueueItem
+            : null;
         setState(() {
           callQueue.clearAll();
           if (queueItems.isNotEmpty) {
@@ -231,42 +241,50 @@ class _HomePageState extends State<HomePage> {
             }
           }
         });
-        debugPrint("[QUEUE][LOAD] ✅ Loaded queue from API - ${queueItems.length} items");
+        debugPrint(
+          "[QUEUE][LOAD] ✅ Loaded queue from API - ${queueItems.length} items",
+        );
+
+        shouldAutoProcess =
+            (autoProcess || _autoProcessAfterRefresh) &&
+            firstQueueItem != null &&
+            firstQueueItem.autoCall == '1' &&
+            _isAppActive &&
+            !isCallFlowPaused &&
+            !_isLeadCallInProgress &&
+            !_processingLock;
       } else {
+        setState(callQueue.clearAll);
         debugPrint("[QUEUE][LOAD] ❌ API error: ${result['message']}");
       }
     } catch (e) {
+      if (mounted) setState(callQueue.clearAll);
       debugPrint("[QUEUE][LOAD] ❌ Failed to load queue from API: $e");
+    } finally {
+      _queueRefreshInProgress = false;
+      _autoProcessAfterRefresh = false;
     }
-  }
 
-  Future<void> _enqueueLeadCall(
-    Map<String, dynamic> normalized, {
-    required String reason,
-  }) async {
-    debugPrint("[QUEUE][FLOW] Adding to in-memory queue - reason=$reason");
-    // Create CallQueueItem from the normalized data
-    final item = CallQueueItem.fromMap(normalized);
-    setState(() {
-      callQueue.addItem(item);
-    });
-    debugPrint("[QUEUE][FLOW] ✅ Added to queue - queue length=${callQueue.length}");
+    if (shouldAutoProcess) {
+      await _processFirstQueuedCall();
+    }
   }
 
   Future<void> _initializeNotifications() async {
     debugPrint("[INIT] Starting notification initialization...");
-    
+
     _notificationSub?.cancel();
-    _notificationSub =
-        NotificationService.notificationStream.stream.listen((data) {
-          debugPrint("[STREAM] Notification stream received: $data");
-          _handleIncomingLeadCall(data, source: "notification_stream");
-        });
+    _notificationSub = NotificationService.notificationStream.stream.listen((
+      data,
+    ) {
+      debugPrint("[STREAM] Notification stream received: $data");
+      _handleIncomingLeadCall(data, source: "notification_stream");
+    });
 
     // Initialize notification service
     await NotificationService().initialize();
     debugPrint("[INIT] NotificationService initialized");
-    
+
     debugPrint("[INIT] ✅ Notification initialization complete");
   }
 
@@ -275,7 +293,7 @@ class _HomePageState extends State<HomePage> {
 
     debugPrint("═════════════════════════════════════════");
     debugPrint("[FCM] Starting FCM initialization...");
-    
+
     // Request permissions
     debugPrint("[FCM] Requesting notification permissions...");
     final settings = await messaging.requestPermission(
@@ -289,9 +307,15 @@ class _HomePageState extends State<HomePage> {
     );
     debugPrint("[FCM] Permission status: ${settings.authorizationStatus}");
     debugPrint("[FCM] Authorization status details:");
-    debugPrint("     - isEnabled: ${settings.authorizationStatus == AuthorizationStatus.authorized}");
-    debugPrint("     - isSilent: ${settings.authorizationStatus == AuthorizationStatus.provisional}");
-    debugPrint("     - isDenied: ${settings.authorizationStatus == AuthorizationStatus.denied}");
+    debugPrint(
+      "     - isEnabled: ${settings.authorizationStatus == AuthorizationStatus.authorized}",
+    );
+    debugPrint(
+      "     - isSilent: ${settings.authorizationStatus == AuthorizationStatus.provisional}",
+    );
+    debugPrint(
+      "     - isDenied: ${settings.authorizationStatus == AuthorizationStatus.denied}",
+    );
 
     // Get token
     debugPrint("[FCM] Getting FCM token...");
@@ -311,9 +335,11 @@ class _HomePageState extends State<HomePage> {
       debugPrint("📱 Registering device with token...");
       final registerResult = await DeviceApi.registerDevice(fcmToken!);
       debugPrint("REGISTER DEVICE RESULT => $registerResult");
-      
+
       if (registerResult["success"] != true) {
-        debugPrint("❌ Device registration failed: ${registerResult['message']}");
+        debugPrint(
+          "❌ Device registration failed: ${registerResult['message']}",
+        );
       } else {
         debugPrint("✅ Device registered successfully");
       }
@@ -366,93 +392,8 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  Future<void> _handleCallBatch(
-    Map<String, dynamic> batchData, {
-    String source = "unknown",
-  }) async {
-    debugPrint("========== HANDLE CALL BATCH ==========");
-    debugPrint("Source: $source");
-    debugPrint("Batch Name: ${batchData['call_batch_name']}");
-    debugPrint("Total Leads: ${batchData['total_leads']}");
-    debugPrint("Is paused: $isCallFlowPaused");
-    debugPrint("Queue length: ${callQueue.length}");
-    
-    if (!mounted) {
-      debugPrint("❌ Not mounted, ignoring batch");
-      return;
-    }
-
-    final totalLeads = batchData['total_leads'] ?? 0;
-    final leads = batchData['leads'] ?? [];
-
-    debugPrint("Processing ${leads.length} leads from batch");
-
-    // Show notification about batch arrival
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Call Batch Added with Count: $totalLeads'),
-        duration: const Duration(seconds: 3),
-      ),
-    );
-
-    // Normalize and deduplicate all leads up front
-    final normalizedLeads = <Map<String, dynamic>>[];
-    for (int i = 0; i < leads.length; i++) {
-      final leadData = leads[i];
-      final normalized = NotificationService.normalizeLeadCallPayload(
-        leadData is Map ? Map<String, dynamic>.from(leadData as Map) : {},
-      );
-      if (normalized == null) {
-        debugPrint("[BATCH] ❌ Failed to normalize lead at index $i");
-        continue;
-      }
-      if (_isDuplicateLeadCall(normalized)) {
-        debugPrint("[BATCH] ⏭️ Skipping duplicate: ${normalized['docname']}");
-        continue;
-      }
-      normalizedLeads.add(normalized);
-    }
-
-    if (normalizedLeads.isEmpty) {
-      debugPrint("[BATCH] No valid leads to process");
-      return;
-    }
-
-    final processFirstImmediately = !isCallFlowPaused && !_isLeadCallInProgress;
-
-    // Queue all leads that won't be processed immediately — do this FIRST
-    // so the queue badge appears before the first call screen opens.
-    final queueStartIndex = processFirstImmediately ? 1 : 0;
-    for (int i = queueStartIndex; i < normalizedLeads.length; i++) {
-      await _enqueueLeadCall(normalizedLeads[i], reason: "batch_queued");
-      if (!mounted) return;
-    }
-
-    if (processFirstImmediately) {
-      debugPrint("[BATCH] ✅ Processing first lead immediately");
-      setState(() { _isLeadCallInProgress = true; });
-
-      final routeResult = await Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => LeadCallScreen(data: normalizedLeads[0]),
-        ),
-      );
-
-      if (!mounted) return;
-      setState(() { _isLeadCallInProgress = false; });
-
-      // Re-queue the first lead if the user cancelled it
-      if (routeResult is Map<String, dynamic> && routeResult['status'] == 'cancelled') {
-        debugPrint("[BATCH] ℹ️ First lead cancelled — re-queuing");
-        await _enqueueLeadCall(normalizedLeads[0], reason: "batch_first_cancelled");
-      }
-    }
-
-    debugPrint("[BATCH] ========== BATCH PROCESSING COMPLETE ==========");
-    debugPrint("[BATCH] Total valid leads: ${normalizedLeads.length}");
-    debugPrint("[BATCH] Queue length after batch: ${callQueue.length}");
-    debugPrint("========== END CALL BATCH ==========");
+  Future<void> _refreshHomeData() async {
+    await Future.wait([fetchOpportunities(), _loadPendingQueue()]);
   }
 
   Future<void> _handleIncomingLeadCall(
@@ -462,205 +403,23 @@ class _HomePageState extends State<HomePage> {
     debugPrint("========== HANDLE INCOMING NOTIFICATION ==========");
     debugPrint("Source: $source");
     debugPrint("Raw data: $data");
-    
+
     if (!mounted) {
       debugPrint("❌ Not mounted, ignoring");
       return;
     }
 
-    // Check if this is a CALL_BATCH
-    final batchData = NotificationService.normalizeCallBatchPayload(data);
-    if (batchData != null && batchData["type"] == "CALL_BATCH") {
-      debugPrint("✅ Detected CALL_BATCH - routing to batch handler");
-      await _handleCallBatch(batchData, source: source);
-      return;
-    }
+    final deliveryContext =
+        data[NotificationService.deliveryContextKey]?.toString() ?? 'unknown';
+    final isForegroundDelivery =
+        deliveryContext == NotificationService.foregroundDelivery;
 
-    // Otherwise, process as single LEAD_CALL (existing logic)
-    debugPrint("========== HANDLE INCOMING LEAD CALL ==========");
-    debugPrint("Is paused: $isCallFlowPaused");
-    debugPrint("Queue length: ${callQueue.length}");
-
-    final normalized = NotificationService.normalizeLeadCallPayload(data);
-    debugPrint("Normalized: $normalized");
-    
-    setState(() {
-      _pushReceivedCount++;
-      _lastPushReceivedAt = DateTime.now();
-      _lastPushSource = source;
-      _lastPushRaw = Map<String, dynamic>.from(data);
-      _lastPushNormalized = normalized != null
-          ? Map<String, dynamic>.from(normalized)
-          : null;
-    });
-
-    if (normalized == null) {
-      debugPrint("❌ Lead payload ignored after normalize => $data");
-      setState(() {
-        _lastPushAction = "ignored_invalid_payload";
-      });
-      return;
-    }
-    
-    if (_isDuplicateLeadCall(normalized)) {
-      debugPrint("❌ Duplicate call detected");
-      setState(() {
-        _lastPushAction = "ignored_duplicate";
-      });
-      return;
-    }
-
-    // If already processing a call OR lock is held by another notification, queue immediately
-    if (isCallFlowPaused || _isLeadCallInProgress || _processingLock) {
-      debugPrint("⏸️ Call flow busy. Adding to queue...");
-      final reason = isCallFlowPaused
-          ? "paused_flow"
-          : _processingLock
-              ? "processing_lock"
-              : "already_in_call";
-      await _enqueueLeadCall(normalized, reason: reason);
-      if (!mounted) return;
-      setState(() {
-        _lastPushAction = "queued_$reason";
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Call from ${normalized["customer_name"] ?? "Unknown"} queued',
-          ),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-      debugPrint("========== END INCOMING LEAD CALL ==========");
-      return;
-    }
-
-    debugPrint("✅ Navigating to LeadCallScreen");
-    // Acquire lock immediately to prevent race condition
-    _processingLock = true;
-    setState(() {
-      _isLeadCallInProgress = true;
-    });
-    final routeResult = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => LeadCallScreen(data: normalized),
-      ),
+    debugPrint(
+      '[PUSH] delivery=$deliveryContext source=$source; refreshing API queue',
     );
-    if (!mounted) return;
-    setState(() {
-      _isLeadCallInProgress = false;
-    });
-    _processingLock = false;
-    if (routeResult is Map<String, dynamic> && routeResult['status'] == 'cancelled') {
-      // Add to queue as cancelled — keeps position, user can restore and call later
-      await _enqueueLeadCall(normalized, reason: "manual_cancel");
-      if (!mounted) return;
-      final idx = callQueue.length - 1;
-      setState(() {
-        callQueue.markCancelled(idx);
-      });
-      debugPrint("[QUEUE] Marked cancelled at index=$idx");
-    }
-    setState(() {
-      _lastPushAction = "navigated_to_lead_call_screen";
-    });
-    debugPrint("========== END INCOMING LEAD CALL ==========");
-  }
-
-  void _showCallQueueScreen() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => CallQueueScreen(
-          callQueue: callQueue,
-          onReorder: (oldIndex, newIndex) {
-            setState(() {
-              callQueue.reorder(oldIndex, newIndex);
-            });
-          },
-          onMarkCancelled: (index) {
-            setState(() {
-              callQueue.markCancelled(index);
-            });
-            debugPrint("[QUEUE] Marked cancelled at index=$index");
-          },
-          onRestorePending: (index) {
-            setState(() {
-              callQueue.restorePending(index);
-            });
-            debugPrint("[QUEUE] Restored pending at index=$index");
-          },
-        ),
-      ),
-    ).then((selectedIndex) async {
-      if (selectedIndex != null && selectedIndex is int) {
-        final callItem = callQueue.get(selectedIndex);
-        if (callItem != null) {
-          callQueue.remove(selectedIndex);
-          setState(() {});
-
-          setState(() { _isLeadCallInProgress = true; });
-
-          final result = await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => LeadCallScreen(data: callItem.toMap()),
-            ),
-          );
-
-          if (!mounted) return;
-          setState(() { _isLeadCallInProgress = false; });
-
-          // User cancelled — keep it in queue as cancelled instead of removing
-          if (result is Map<String, dynamic> && result['status'] == 'cancelled') {
-            await _enqueueLeadCall(callItem.toMap(), reason: 'queue_call_cancelled');
-            if (!mounted) return;
-            final idx = callQueue.length - 1;
-            setState(() {
-              callQueue.markCancelled(idx);
-            });
-            debugPrint("[QUEUE] Re-queued cancelled call at index=$idx");
-            return;
-          }
-
-          // Call was not answered — re-queue it and stop the loop
-          if (result is Map<String, dynamic> && result['status'] == 'not_connected') {
-            await _enqueueLeadCall(callItem.toMap(), reason: 'not_connected_requeue');
-            return;
-          }
-
-          // Auto-process next call if queue still has items
-          if (callQueue.isNotEmpty) {
-            _processFirstQueuedCall();
-          }
-        }
-      }
-    });
-  }
-
-  bool _isDuplicateLeadCall(Map<String, dynamic> data) {
-    // Fix #7: Null-safe duplicate detection with Set<String>
-    final docname = data["docname"]?.toString();
-    final mobileNo = data["mobile_no"]?.toString();
-    final customerName = data["customer_name"]?.toString();
-    
-    if (docname == null || mobileNo == null || customerName == null) {
-      return false;
-    }
-    
-    final key = '${docname}_${mobileNo}_${customerName}';
-    if (_recentLeadCalls.contains(key)) {
-      return true;
-    }
-    
-    _recentLeadCalls.add(key);
-    // Clean up old entries after 5 seconds to prevent memory bloat
-    Future.delayed(const Duration(seconds: 5), () {
-      _recentLeadCalls.remove(key);
-    });
-    
-    return false;
+    await _loadPendingQueue(
+      autoProcess: isForegroundDelivery && _isAppActive && !isCallFlowPaused,
+    );
   }
 
   Future<void> toggleCallFlow() async {
@@ -670,14 +429,9 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         pausedUntil = null;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Call flow resumed")),
-      );
-      
-      // Optionally process queued calls
-      if (callQueue.isNotEmpty) {
-        _showQueueProcessingOption();
-      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Call flow resumed")));
     } else {
       // Pause call flow for a selected interval
       final minutes = await _selectPauseMinutes();
@@ -691,11 +445,10 @@ class _HomePageState extends State<HomePage> {
           pausedUntil = null;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Pause interval ended. Call flow resumed")),
+          const SnackBar(
+            content: Text("Pause interval ended. Call flow resumed"),
+          ),
         );
-        if (callQueue.isNotEmpty) {
-          _showQueueProcessingOption();
-        }
       });
 
       setState(() {
@@ -730,57 +483,30 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  void _showQueueProcessingOption() {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Process Queued Calls?"),
-        content: Text(
-          "You have ${callQueue.length} call(s) in the queue.\nWould you like to process them?",
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Later"),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _processFirstQueuedCall();
-            },
-            child: const Text("Process"),
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<void> _processFirstQueuedCall() async {
-    final call = callQueue.removeFirst();
-    if (call == null || !mounted) return;
-
-    setState(() { _isLeadCallInProgress = true; });
-
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => LeadCallScreen(data: call.toMap()),
-      ),
-    );
-
-    if (!mounted) return;
-    setState(() { _isLeadCallInProgress = false; });
-
-    // Call was not answered — re-queue it and stop the loop
-    if (result is Map<String, dynamic> && result['status'] == 'not_connected') {
-      await _enqueueLeadCall(call.toMap(), reason: 'not_connected_requeue');
+    if (!mounted ||
+        !_isAppActive ||
+        isCallFlowPaused ||
+        _isLeadCallInProgress ||
+        _processingLock) {
       return;
     }
 
-    // Auto-process next call if queue still has items
-    if (callQueue.isNotEmpty) {
-      _processFirstQueuedCall();
-    }
+    final call = callQueue.get(0);
+    if (call == null) return;
+
+    _processingLock = true;
+    setState(() => _isLeadCallInProgress = true);
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => LeadCallScreen(data: call.toMap())),
+    );
+
+    if (!mounted) return;
+    _processingLock = false;
+    setState(() => _isLeadCallInProgress = false);
+    await _loadPendingQueue();
   }
 
   Future<void> logout() async {
@@ -798,9 +524,7 @@ class _HomePageState extends State<HomePage> {
         padding: EdgeInsets.zero,
         children: [
           DrawerHeader(
-            decoration: const BoxDecoration(
-              color: Colors.blue,
-            ),
+            decoration: const BoxDecoration(color: Colors.blue),
             child: const Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.end,
@@ -879,10 +603,16 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pauseTimer?.cancel();
     _tokenRefreshSub?.cancel();
     _notificationSub?.cancel();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _appLifecycleState = state;
   }
 
   @override
@@ -903,7 +633,9 @@ class _HomePageState extends State<HomePage> {
         children: [
           // Call Flow Status Bar
           Container(
-            color: isCallFlowPaused ? Colors.red.shade100 : Colors.green.shade100,
+            color: isCallFlowPaused
+                ? Colors.red.shade100
+                : Colors.green.shade100,
             padding: const EdgeInsets.all(16),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -920,12 +652,12 @@ class _HomePageState extends State<HomePage> {
                 ),
                 ElevatedButton.icon(
                   onPressed: toggleCallFlow,
-                  icon: Icon(
-                    isCallFlowPaused ? Icons.play_arrow : Icons.pause,
-                  ),
+                  icon: Icon(isCallFlowPaused ? Icons.play_arrow : Icons.pause),
                   label: Text(isCallFlowPaused ? "Resume" : "Pause"),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: isCallFlowPaused ? Colors.green : Colors.red,
+                    backgroundColor: isCallFlowPaused
+                        ? Colors.green
+                        : Colors.red,
                     foregroundColor: Colors.white,
                   ),
                 ),
@@ -945,62 +677,6 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
             ),
-          Container(
-            width: double.infinity,
-            margin: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-            child: Card(
-              color: Colors.blueGrey.shade50,
-              child: Padding(
-                padding: const EdgeInsets.all(10),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          "Push Debug",
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: () {
-                            setState(() {
-                              _lastPushReceivedAt = null;
-                              _lastPushSource = "-";
-                              _lastPushAction = "-";
-                              _lastPushRaw = null;
-                              _lastPushNormalized = null;
-                              _pushReceivedCount = 0;
-                            });
-                          },
-                          child: const Text("Clear"),
-                        ),
-                      ],
-                    ),
-                    Text("Count: $_pushReceivedCount"),
-                    Text(
-                      "Last At: ${_lastPushReceivedAt?.toLocal().toString().split('.').first ?? '-'}",
-                    ),
-                    Text("Source: $_lastPushSource"),
-                    Text("Action: $_lastPushAction"),
-                    const SizedBox(height: 6),
-                    Text(
-                      "Raw: ${_lastPushRaw == null ? '-' : jsonEncode(_lastPushRaw)}",
-                      style: const TextStyle(fontSize: 11),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      "Normalized: ${_lastPushNormalized == null ? '-' : jsonEncode(_lastPushNormalized)}",
-                      style: const TextStyle(fontSize: 11),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
           // Call Queue Section
           if (callQueue.isNotEmpty)
             Container(
@@ -1014,7 +690,10 @@ class _HomePageState extends State<HomePage> {
                     children: [
                       Row(
                         children: [
-                          const Icon(Icons.hourglass_empty, color: Colors.orange),
+                          const Icon(
+                            Icons.hourglass_empty,
+                            color: Colors.orange,
+                          ),
                           const SizedBox(width: 8),
                           Text(
                             "Queued Calls: ${callQueue.length}",
@@ -1027,7 +706,9 @@ class _HomePageState extends State<HomePage> {
                         ],
                       ),
                       ElevatedButton.icon(
-                        onPressed: _processFirstQueuedCall,
+                        onPressed: isCallFlowPaused || _isLeadCallInProgress
+                            ? null
+                            : _processFirstQueuedCall,
                         icon: const Icon(Icons.phone),
                         label: const Text("Process"),
                         style: ElevatedButton.styleFrom(
@@ -1088,108 +769,64 @@ class _HomePageState extends State<HomePage> {
           Expanded(
             child: isLoading
                 ? const Center(child: CircularProgressIndicator())
-                : opportunities.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(
-                              Icons.inbox,
-                              size: 80,
-                              color: Colors.grey,
-                            ),
-                            const SizedBox(height: 16),
-                            const Text(
-                              "No opportunities assigned",
-                              style: TextStyle(
-                                fontSize: 18,
-                                color: Colors.grey,
-                              ),
-                            ),
-                            const SizedBox(height: 24),
-                            ElevatedButton.icon(
-                              onPressed: fetchOpportunities,
-                              icon: const Icon(Icons.refresh),
-                              label: const Text("Refresh"),
-                            ),
-                          ],
-                        ),
-                      )
-                    : RefreshIndicator(
-                        onRefresh: fetchOpportunities,
-                        child: ListView.builder(
-                          itemCount: opportunities.length,
-                          itemBuilder: (context, index) {
-                            final opp = opportunities[index];
-                            return OpportunityCard(
-                              opportunity: opp,
-                              onPause: () async {
-                                final result = await OpportunitiesApi.pauseCall(
-                                  opp["name"] ?? "",
-                                );
-                                if (!mounted) return;
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      result["message"] ??
-                                          (result["success"]
-                                              ? "Call paused"
-                                              : "Failed to pause"),
-                                    ),
+                : RefreshIndicator(
+                    onRefresh: _refreshHomeData,
+                    child: opportunities.isEmpty
+                        ? ListView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            children: const [
+                              SizedBox(height: 120),
+                              Icon(Icons.inbox, size: 80, color: Colors.grey),
+                              SizedBox(height: 16),
+                              Center(
+                                child: Text(
+                                  "No opportunities assigned",
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    color: Colors.grey,
                                   ),
-                                );
-                                if (result["success"] == true) {
-                                  fetchOpportunities();
-                                }
-                              },
-                            );
-                          },
-                        ),
-                      ),
-          ),
-        ],
-      ),
-      floatingActionButton: Column(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          if (callQueue.isNotEmpty)
-            FloatingActionButton(
-              onPressed: () => _showCallQueueScreen(),
-              tooltip: "Call Queue (${callQueue.length})",
-              heroTag: "queue_btn",
-              backgroundColor: Colors.orange,
-              child: Stack(
-                alignment: Alignment.topRight,
-                children: [
-                  const Icon(Icons.queue_music),
-                  Positioned(
-                    right: -5,
-                    top: -5,
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: const BoxDecoration(
-                        color: Colors.red,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Text(
-                        "${callQueue.length}",
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
+                                ),
+                              ),
+                              SizedBox(height: 12),
+                              Center(
+                                child: Text(
+                                  "Pull down to refresh",
+                                  style: TextStyle(color: Colors.grey),
+                                ),
+                              ),
+                            ],
+                          )
+                        : ListView.builder(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            itemCount: opportunities.length,
+                            itemBuilder: (context, index) {
+                              final opp = opportunities[index];
+                              return OpportunityCard(
+                                opportunity: opp,
+                                onPause: () async {
+                                  final result =
+                                      await OpportunitiesApi.pauseCall(
+                                        opp["name"] ?? "",
+                                      );
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        result["message"] ??
+                                            (result["success"]
+                                                ? "Call paused"
+                                                : "Failed to pause"),
+                                      ),
+                                    ),
+                                  );
+                                  if (result["success"] == true) {
+                                    fetchOpportunities();
+                                  }
+                                },
+                              );
+                            },
+                          ),
                   ),
-                ],
-              ),
-            ),
-          const SizedBox(height: 16),
-          FloatingActionButton.extended(
-            onPressed: fetchOpportunities,
-            icon: const Icon(Icons.refresh),
-            label: const Text("Refresh"),
-            heroTag: "refresh_btn",
           ),
         ],
       ),
@@ -1361,16 +998,14 @@ class OpportunityCard extends StatelessWidget {
 class LeadCallScreen extends StatefulWidget {
   final Map<String, dynamic> data;
 
-  const LeadCallScreen({
-    super.key,
-    required this.data,
-  });
+  const LeadCallScreen({super.key, required this.data});
 
   @override
   State<LeadCallScreen> createState() => _LeadCallScreenState();
 }
 
-class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObserver {
+class _LeadCallScreenState extends State<LeadCallScreen>
+    with WidgetsBindingObserver {
   int countdown = 5;
   Timer? timer;
   bool callTriggered = false;
@@ -1380,18 +1015,24 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
   DateTime? callStartTime;
   DateTime? _initiatedAt;
   Timer? callDurationTimer;
-  
-  static const EventChannel _callStateChannel = EventChannel('lead_calling/call_state');
+
+  static const EventChannel _callStateChannel = EventChannel(
+    'lead_calling/call_state',
+  );
   StreamSubscription? _callStateSubscription;
   bool _hasListenerSetup = false;
 
   Future<Map<String, dynamic>> _fetchCallInfoWithRetry(String mobileNo) async {
-    debugPrint('[CALLLOG] 📞 Starting call log fetch with retries for: $mobileNo');
-    
+    debugPrint(
+      '[CALLLOG] 📞 Starting call log fetch with retries for: $mobileNo',
+    );
+
     // NEW: Check permission first
     final permissionGranted = await AutoDialer.ensureCallLogPermission();
-    debugPrint('[CALLLOG] READ_CALL_LOG permission: ${permissionGranted ? '✅ GRANTED' : '❌ DENIED'}');
-    
+    debugPrint(
+      '[CALLLOG] READ_CALL_LOG permission: ${permissionGranted ? '✅ GRANTED' : '❌ DENIED'}',
+    );
+
     final initiatedAt = _initiatedAt ?? DateTime.now();
     final maxAttempts = permissionGranted ? 4 : 2;
 
@@ -1411,7 +1052,9 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
 
         if (found) {
           debugPrint('[CALLLOG] ✅ Found call info on attempt $attempt');
-          debugPrint('[CALLLOG] Duration: ${durationSeconds}s, Status: ${callInfo['callStatus']}, Attended: ${callInfo['attended']}');
+          debugPrint(
+            '[CALLLOG] Duration: ${durationSeconds}s, Status: ${callInfo['callStatus']}, Attended: ${callInfo['attended']}',
+          );
 
           callInfo['dataSource'] = 'device';
           callInfo['permissionGranted'] = permissionGranted;
@@ -1421,7 +1064,9 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
 
         if (attempt < maxAttempts) {
           final delayMs = 300 + (attempt * 100);
-          debugPrint('[CALLLOG] ⏳ No data on attempt $attempt, waiting ${delayMs}ms before retry...');
+          debugPrint(
+            '[CALLLOG] ⏳ No data on attempt $attempt, waiting ${delayMs}ms before retry...',
+          );
           await Future.delayed(Duration(milliseconds: delayMs));
         }
       } catch (e) {
@@ -1431,10 +1076,12 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
         }
       }
     }
-    
-    debugPrint('[CALLLOG] ❌ Failed to retrieve call info after $maxAttempts attempts');
+
+    debugPrint(
+      '[CALLLOG] ❌ Failed to retrieve call info after $maxAttempts attempts',
+    );
     debugPrint('[CALLLOG] Using fallback - user will enter data manually');
-    
+
     return {
       'found': false,
       'durationSeconds': 0,
@@ -1459,13 +1106,15 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
   void _setupCallStateListener() {
     if (_hasListenerSetup) return;
     _hasListenerSetup = true;
-    
+
     _callStateSubscription = _callStateChannel.receiveBroadcastStream().listen(
       (dynamic event) {
         debugPrint('[CALL_STATE] Event received: $event');
         if (event is Map) {
           final state = event['state'];
-          if (state == 'CALL_ENDED' && callStarted && !_wasBackgroundedDuringCall) {
+          if (state == 'CALL_ENDED' &&
+              callStarted &&
+              !_wasBackgroundedDuringCall) {
             debugPrint('[CALL_STATE] Call ended while app is active');
             _handleDirectCallEnd();
           }
@@ -1479,10 +1128,10 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
 
   Future<void> _handleDirectCallEnd() async {
     if (!mounted) return;
-    
+
     callDurationTimer?.cancel();
     debugPrint('[CALL] Call ended - showing completion dialog directly');
-    
+
     final mobileNo = widget.data["mobile_no"]?.toString() ?? "";
     if (mobileNo.isNotEmpty) {
       final callInfo = await _fetchCallInfoWithRetry(mobileNo);
@@ -1492,25 +1141,34 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
         // Call log shows customer did not answer — auto-log and re-queue
         if (!attended) {
           callStarted = false;
-          unawaited(CallLogApi.updateCallLog(
-            doctype: widget.data["doctype"]?.toString() ?? '',
-            docname: widget.data["docname"]?.toString() ?? '',
-            customerName: widget.data["customer_name"]?.toString() ?? '',
-            mobileNo: mobileNo,
-            initiatedTime: _initiatedAt ?? DateTime.now(),
-            callDuration: callInfo['durationSeconds'] is int
-                ? callInfo['durationSeconds'] as int
-                : int.tryParse(callInfo['durationSeconds']?.toString() ?? '0') ?? 0,
-            callStatus: callInfo['callStatus']?.toString() ?? 'Not Connected',
-            disconnectedStatus: callInfo['disconnectedStatus']?.toString() ?? 'not_connected',
-            attended: false,
-            notes: '',
-            dataSource: callInfo['dataSource']?.toString() ?? 'device',
-            permissionGranted: callInfo['permissionGranted'] == true,
-            retrievedAttempt: callInfo['retrievedAttempt'] is int
-                ? callInfo['retrievedAttempt'] as int
-                : int.tryParse(callInfo['retrievedAttempt']?.toString() ?? '-1') ?? -1,
-          ));
+          unawaited(
+            CallLogApi.updateCallLog(
+              doctype: widget.data["doctype"]?.toString() ?? '',
+              docname: widget.data["docname"]?.toString() ?? '',
+              customerName: widget.data["customer_name"]?.toString() ?? '',
+              mobileNo: mobileNo,
+              initiatedTime: _initiatedAt ?? DateTime.now(),
+              callDuration: callInfo['durationSeconds'] is int
+                  ? callInfo['durationSeconds'] as int
+                  : int.tryParse(
+                          callInfo['durationSeconds']?.toString() ?? '0',
+                        ) ??
+                        0,
+              callStatus: callInfo['callStatus']?.toString() ?? 'Not Connected',
+              disconnectedStatus:
+                  callInfo['disconnectedStatus']?.toString() ?? 'not_connected',
+              attended: false,
+              notes: '',
+              dataSource: callInfo['dataSource']?.toString() ?? 'device',
+              permissionGranted: callInfo['permissionGranted'] == true,
+              retrievedAttempt: callInfo['retrievedAttempt'] is int
+                  ? callInfo['retrievedAttempt'] as int
+                  : int.tryParse(
+                          callInfo['retrievedAttempt']?.toString() ?? '-1',
+                        ) ??
+                        -1,
+            ),
+          );
           if (mounted) Navigator.pop(context, {'status': 'not_connected'});
           return;
         }
@@ -1532,7 +1190,10 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
             dataSource: callInfo['dataSource']?.toString() ?? 'unknown',
             permissionGranted: callInfo['permissionGranted'] == true,
             retrievedAttempt: callInfo['retrievedAttempt']?.toString() != null
-                ? int.tryParse(callInfo['retrievedAttempt']?.toString() ?? '-1') ?? -1
+                ? int.tryParse(
+                        callInfo['retrievedAttempt']?.toString() ?? '-1',
+                      ) ??
+                      -1
                 : -1,
           );
         }
@@ -1555,42 +1216,37 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
   }
 
   void startCountdown() {
+    timer?.cancel();
     // Fix #5: Add try-catch around makeCall to cancel timer on error
-    timer = Timer.periodic(
-      const Duration(seconds: 1),
-      (Timer t) {
-        if (countdown <= 1) {
+    timer = Timer.periodic(const Duration(seconds: 1), (Timer t) {
+      if (countdown <= 1) {
+        t.cancel();
+        try {
+          makeCall();
+        } catch (e) {
+          debugPrint("[TIMER] Error in makeCall: $e");
           t.cancel();
-          try {
-            makeCall();
-          } catch (e) {
-            debugPrint("[TIMER] Error in makeCall: $e");
-            t.cancel();
-          }
-        } else {
-          if (!mounted) return;
-          setState(() {
-            countdown--;
-          });
         }
-      },
-    );
+      } else {
+        if (!mounted) return;
+        setState(() {
+          countdown--;
+        });
+      }
+    });
   }
 
   void _startCallDurationTracking() {
     debugPrint("[CALL] Starting to track call duration");
     callStartTime = DateTime.now();
-    
+
     // Track call duration every second
-    callDurationTimer = Timer.periodic(
-      const Duration(seconds: 1),
-      (Timer t) {
-        // We can update UI with call duration if needed
-        if (mounted) {
-          setState(() {});
-        }
-      },
-    );
+    callDurationTimer = Timer.periodic(const Duration(seconds: 1), (Timer t) {
+      // We can update UI with call duration if needed
+      if (mounted) {
+        setState(() {});
+      }
+    });
   }
 
   Duration _getCallDuration() {
@@ -1608,7 +1264,7 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
     int retrievedAttempt = -1,
   }) async {
     debugPrint("[CALL] Showing call completion dialog");
-    
+
     if (!mounted) return;
 
     final customerName = widget.data["customer_name"]?.toString() ?? "Unknown";
@@ -1647,6 +1303,10 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
 
   Future<void> makeCall() async {
     if (callTriggered) return;
+    if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+      debugPrint('[CALL] Auto-call deferred because app is not active');
+      return;
+    }
 
     callTriggered = true;
     timer?.cancel();
@@ -1680,11 +1340,15 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
 
     final callLogPermissionGranted = await AutoDialer.ensureCallLogPermission();
     if (!callLogPermissionGranted) {
-      debugPrint("[CALL] ⚠️ READ_CALL_LOG permission not granted - will use fallback logic");
+      debugPrint(
+        "[CALL] ⚠️ READ_CALL_LOG permission not granted - will use fallback logic",
+      );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text("Cannot read device call logs - will use manual entry"),
+            content: Text(
+              "Cannot read device call logs - will use manual entry",
+            ),
             duration: Duration(seconds: 3),
           ),
         );
@@ -1697,7 +1361,7 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
     final initiatedAt = DateTime.now();
     _initiatedAt = initiatedAt;
     debugPrint("[CALL] 📞 Initiating call to: $customerName ($mobileNo)");
-    
+
     try {
       // Log to backend
       await CallLogApi.logCallInitiation(
@@ -1714,7 +1378,7 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
 
     // Auto-dial directly without showing dialer
     debugPrint("[CALL] 🚀 Using AutoDialer to initiate call directly");
-    
+
     final success = await AutoDialer.autoCall(mobileNo);
     // Fix #1: Set callStarted to actual success status (not always false)
     callStarted = success;
@@ -1724,19 +1388,20 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
       // Try opening dialer as fallback
       final fallbackSuccess = await AutoDialer.openDialer(mobileNo);
       callStarted = fallbackSuccess;
-      
+
       if (!fallbackSuccess && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Unable to initiate call")),
         );
-        
+
         // Log error
         await CallLogApi.logCallError(
           doctype: doctype,
           docname: docname,
           customerName: customerName,
           mobileNo: mobileNo,
-          errorMessage: "Failed to initiate auto call - both AutoDialer and fallback failed",
+          errorMessage:
+              "Failed to initiate auto call - both AutoDialer and fallback failed",
         );
       }
     } else {
@@ -1764,6 +1429,23 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
+    if ((state == AppLifecycleState.inactive ||
+            state == AppLifecycleState.paused ||
+            state == AppLifecycleState.hidden) &&
+        !callStarted &&
+        !callTriggered) {
+      timer?.cancel();
+      debugPrint('[CALL] Countdown paused while app is not active');
+    }
+
+    if (state == AppLifecycleState.resumed &&
+        !callStarted &&
+        !callTriggered &&
+        countdown > 0) {
+      debugPrint('[CALL] Countdown resumed while app is active');
+      startCountdown();
+    }
+
     if (state == AppLifecycleState.paused) {
       if (callStarted) {
         _wasBackgroundedDuringCall = true;
@@ -1779,11 +1461,11 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
             : DateTime.now().difference(_backgroundedAt!);
 
         debugPrint(
-            '[CALL] App resumed after background; pausedDuration=$pausedDuration');
+          '[CALL] App resumed after background; pausedDuration=$pausedDuration',
+        );
 
         if (pausedDuration >= const Duration(seconds: 2)) {
-          debugPrint(
-              '[CALL] Showing completion dialog after resume from call');
+          debugPrint('[CALL] Showing completion dialog after resume from call');
           callDurationTimer?.cancel();
           if (mounted) {
             _handleResumeAfterCall();
@@ -1794,7 +1476,8 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
           _backgroundedAt = null;
         } else {
           debugPrint(
-              '[CALL] Resume detected too quickly after pause; skipping completion dialog');
+            '[CALL] Resume detected too quickly after pause; skipping completion dialog',
+          );
         }
       }
     }
@@ -1813,25 +1496,34 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
 
       // Call log shows customer did not answer — auto-log and re-queue
       if (!attended) {
-        unawaited(CallLogApi.updateCallLog(
-          doctype: widget.data["doctype"]?.toString() ?? '',
-          docname: widget.data["docname"]?.toString() ?? '',
-          customerName: widget.data["customer_name"]?.toString() ?? '',
-          mobileNo: mobileNo,
-          initiatedTime: _initiatedAt ?? DateTime.now(),
-          callDuration: callInfo['durationSeconds'] is int
-              ? callInfo['durationSeconds'] as int
-              : int.tryParse(callInfo['durationSeconds']?.toString() ?? '0') ?? 0,
-          callStatus: callInfo['callStatus']?.toString() ?? 'Not Connected',
-          disconnectedStatus: callInfo['disconnectedStatus']?.toString() ?? 'not_connected',
-          attended: false,
-          notes: '',
-          dataSource: callInfo['dataSource']?.toString() ?? 'device',
-          permissionGranted: callInfo['permissionGranted'] == true,
-          retrievedAttempt: callInfo['retrievedAttempt'] is int
-              ? callInfo['retrievedAttempt'] as int
-              : int.tryParse(callInfo['retrievedAttempt']?.toString() ?? '-1') ?? -1,
-        ));
+        unawaited(
+          CallLogApi.updateCallLog(
+            doctype: widget.data["doctype"]?.toString() ?? '',
+            docname: widget.data["docname"]?.toString() ?? '',
+            customerName: widget.data["customer_name"]?.toString() ?? '',
+            mobileNo: mobileNo,
+            initiatedTime: _initiatedAt ?? DateTime.now(),
+            callDuration: callInfo['durationSeconds'] is int
+                ? callInfo['durationSeconds'] as int
+                : int.tryParse(
+                        callInfo['durationSeconds']?.toString() ?? '0',
+                      ) ??
+                      0,
+            callStatus: callInfo['callStatus']?.toString() ?? 'Not Connected',
+            disconnectedStatus:
+                callInfo['disconnectedStatus']?.toString() ?? 'not_connected',
+            attended: false,
+            notes: '',
+            dataSource: callInfo['dataSource']?.toString() ?? 'device',
+            permissionGranted: callInfo['permissionGranted'] == true,
+            retrievedAttempt: callInfo['retrievedAttempt'] is int
+                ? callInfo['retrievedAttempt'] as int
+                : int.tryParse(
+                        callInfo['retrievedAttempt']?.toString() ?? '-1',
+                      ) ??
+                      -1,
+          ),
+        );
         if (mounted) Navigator.pop(context, {'status': 'not_connected'});
         return;
       }
@@ -1851,7 +1543,8 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
         dataSource: callInfo['dataSource']?.toString() ?? 'unknown',
         permissionGranted: callInfo['permissionGranted'] == true,
         retrievedAttempt: callInfo['retrievedAttempt']?.toString() != null
-            ? int.tryParse(callInfo['retrievedAttempt']?.toString() ?? '-1') ?? -1
+            ? int.tryParse(callInfo['retrievedAttempt']?.toString() ?? '-1') ??
+                  -1
             : -1,
       );
     } else {
@@ -1879,11 +1572,7 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(
-                Icons.call,
-                size: 80,
-                color: Colors.green,
-              ),
+              const Icon(Icons.call, size: 80, color: Colors.green),
               const SizedBox(height: 20),
               Text(
                 widget.data["customer_name"] ?? "Incoming Call",
@@ -1895,10 +1584,7 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
               const SizedBox(height: 10),
               Text(
                 widget.data["mobile_no"] ?? "Unknown",
-                style: const TextStyle(
-                  fontSize: 18,
-                  color: Colors.grey,
-                ),
+                style: const TextStyle(fontSize: 18, color: Colors.grey),
               ),
               const SizedBox(height: 40),
               if (!callTriggered)

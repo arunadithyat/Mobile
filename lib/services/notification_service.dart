@@ -7,15 +7,28 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:permission_handler/permission_handler.dart';
 
-
 class NotificationService {
+  static const String deliveryContextKey = '_delivery_context';
+  static const String foregroundDelivery = 'foreground';
+  static const String initialMessageDelivery = 'initial_message';
+  static const String openedAppDelivery = 'opened_app';
+  static const String localNotificationTapDelivery = 'local_notification_tap';
+
   static final NotificationService _instance = NotificationService._internal();
-  static final FlutterLocalNotificationsPlugin _flutterLocalNotificationsPlugin =
-      FlutterLocalNotificationsPlugin();
+  static final FlutterLocalNotificationsPlugin
+  _flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
 
   // StreamController for handling navigation
   static final StreamController<Map<String, dynamic>> notificationStream =
       StreamController<Map<String, dynamic>>.broadcast();
+
+  static Map<String, dynamic> _withDeliveryContext(
+    Map<String, dynamic> payload,
+    String deliveryContext,
+  ) {
+    return Map<String, dynamic>.from(payload)
+      ..[deliveryContextKey] = deliveryContext;
+  }
 
   NotificationService._internal();
 
@@ -33,7 +46,7 @@ class NotificationService {
     Map<String, dynamic> rawData,
   ) {
     debugPrint("[NOTIFY] normalizeLeadCallPayload input => $rawData");
-    
+
     final merged = <String, dynamic>{};
 
     void merge(dynamic source) {
@@ -73,12 +86,13 @@ class NotificationService {
       return null;
     }
 
-    final type =
-        (pick(['type', 'event', 'event_type']) ?? '').toString().trim();
+    final type = (pick(['type', 'event', 'event_type']) ?? '')
+        .toString()
+        .trim();
     debugPrint("[NOTIFY] extracted type => '$type'");
     debugPrint("[NOTIFY] type.toUpperCase() => '${type.toUpperCase()}'");
     debugPrint("[NOTIFY] checking if in: ['NEW_LEAD_CALL', 'LEAD_CALL']");
-    
+
     // Accept known types, and also allow payloads that clearly look like lead-call data.
     final hasLeadIdentity =
         (pick(['mobile_no', 'mobileNo', 'mobile', 'phone', 'phone_number']) ??
@@ -90,9 +104,12 @@ class NotificationService {
             .toString()
             .trim()
             .isNotEmpty;
-    final isValidType = ['NEW_LEAD_CALL', 'LEAD_CALL'].contains(type.toUpperCase());
+    final isValidType = [
+      'NEW_LEAD_CALL',
+      'LEAD_CALL',
+    ].contains(type.toUpperCase());
     debugPrint("[NOTIFY] isValidType: $isValidType");
-    
+
     if (!isValidType && !hasLeadIdentity) {
       debugPrint("[NOTIFY] ❌ type mismatch: '$type' not in acceptable types");
       debugPrint("[NOTIFY] Raw data was: $rawData");
@@ -114,7 +131,7 @@ class NotificationService {
       'auto_call': (pick(['auto_call', 'autoCall']) ?? '1').toString(),
       'queued_at': DateTime.now().toIso8601String(),
     };
-    
+
     debugPrint("[NOTIFY] ✅ normalized => $normalized");
     return normalized;
   }
@@ -123,7 +140,7 @@ class NotificationService {
     Map<String, dynamic> rawData,
   ) {
     debugPrint("[BATCH] normalizeCallBatchPayload input => $rawData");
-    
+
     final merged = <String, dynamic>{};
 
     void merge(dynamic source) {
@@ -161,16 +178,20 @@ class NotificationService {
           debugPrint("[BATCH] pick('$key') found!");
           return merged[key];
         } else {
-          debugPrint("[BATCH] pick('$key') not found (exists: ${merged.containsKey(key)}, isNull: ${merged[key] == null})");
+          debugPrint(
+            "[BATCH] pick('$key') not found (exists: ${merged.containsKey(key)}, isNull: ${merged[key] == null})",
+          );
         }
       }
       debugPrint("[BATCH] pick() returning null for keys: $keys");
       return null;
     }
 
-    final type = (pick(['type', 'event', 'event_type']) ?? '').toString().trim();
+    final type = (pick(['type', 'event', 'event_type']) ?? '')
+        .toString()
+        .trim();
     debugPrint("[BATCH] extracted type => '$type'");
-    
+
     // Check if it's a CALL_BATCH
     if (type.toUpperCase() != 'CALL_BATCH') {
       debugPrint("[BATCH] ❌ Not a CALL_BATCH (type: '$type')");
@@ -180,20 +201,28 @@ class NotificationService {
     // Verify required batch fields
     final totalLeads = pick(['total_leads', 'totalLeads', 'lead_count']);
     dynamic leadsRaw = pick(['leads']);
-    
-    debugPrint("[BATCH] totalLeads picked: $totalLeads (type: ${totalLeads.runtimeType})");
+
+    debugPrint(
+      "[BATCH] totalLeads picked: $totalLeads (type: ${totalLeads.runtimeType})",
+    );
     if (leadsRaw == null) {
       debugPrint("[BATCH] leadsRaw: null");
     } else if (leadsRaw is List) {
-      debugPrint("[BATCH] leadsRaw: List with ${(leadsRaw as List).length} items");
+      debugPrint(
+        "[BATCH] leadsRaw: List with ${(leadsRaw as List).length} items",
+      );
     } else if (leadsRaw is String) {
-      debugPrint("[BATCH] leadsRaw: String (${leadsRaw.length} chars) - will try JSON parse");
+      debugPrint(
+        "[BATCH] leadsRaw: String (${leadsRaw.length} chars) - will try JSON parse",
+      );
     } else {
       debugPrint("[BATCH] leadsRaw: ${leadsRaw.runtimeType}");
     }
-    
+
     if (leadsRaw == null || totalLeads == null) {
-      debugPrint("[BATCH] ❌ Missing required batch fields (leads=$leadsRaw, totalLeads=$totalLeads)");
+      debugPrint(
+        "[BATCH] ❌ Missing required batch fields (leads=$leadsRaw, totalLeads=$totalLeads)",
+      );
       return null;
     }
 
@@ -213,16 +242,21 @@ class NotificationService {
           }
         } catch (jsonError) {
           // If JSON fails, try converting Python dict format (single quotes) to JSON (double quotes)
-          debugPrint("[BATCH] JSON parse failed, trying Python dict format conversion...");
+          debugPrint(
+            "[BATCH] JSON parse failed, trying Python dict format conversion...",
+          );
           try {
             // Convert Python dict format to JSON: replace single quotes with double quotes
             // But be careful: only replace quotes that are part of keys/strings, not actual content
             final jsonStr = leadsRaw
-                .replaceAll("'", '"')  // Replace single quotes with double quotes
+                .replaceAll(
+                  "'",
+                  '"',
+                ) // Replace single quotes with double quotes
                 .replaceAll('True', 'true')
                 .replaceAll('False', 'false')
                 .replaceAll('None', 'null');
-            
+
             debugPrint("[BATCH] Converted string: $jsonStr");
             final decoded = jsonDecode(jsonStr);
             if (decoded is List) {
@@ -237,7 +271,9 @@ class NotificationService {
           }
         }
       } else {
-        debugPrint("[BATCH] ❌ Leads is neither List nor String: ${leadsRaw.runtimeType}");
+        debugPrint(
+          "[BATCH] ❌ Leads is neither List nor String: ${leadsRaw.runtimeType}",
+        );
         return null;
       }
     } catch (e) {
@@ -276,39 +312,48 @@ class NotificationService {
 
     final normalized = {
       'type': 'CALL_BATCH',
-      'call_batch_name': (pick(['call_batch_name', 'batch_name', 'batchName']) ?? '').toString(),
+      'call_batch_name':
+          (pick(['call_batch_name', 'batch_name', 'batchName']) ?? '')
+              .toString(),
       'title': (pick(['title']) ?? '').toString(),
       'total_leads': int.tryParse(totalLeads.toString()) ?? 0,
       'leads': parsedLeads,
       'received_at': DateTime.now().toIso8601String(),
     };
-    
-    debugPrint("[BATCH] ✅ normalized batch => type=${normalized['type']}, total_leads=${normalized['total_leads']}, leads_count=${parsedLeads.length}");
+
+    debugPrint(
+      "[BATCH] ✅ normalized batch => type=${normalized['type']}, total_leads=${normalized['total_leads']}, leads_count=${parsedLeads.length}",
+    );
     return normalized;
   }
 
   Future<void> initialize() async {
     try {
       debugPrint("[INIT] initialize() method STARTED");
-      
+
       // Initialize local notifications
       debugPrint("[INIT] Initializing local notifications...");
       const AndroidInitializationSettings androidInitializationSettings =
-          AndroidInitializationSettings('ic_launcher');  // ← Changed from 'app_icon' to 'ic_launcher'
+          AndroidInitializationSettings(
+            'ic_launcher',
+          ); // ← Changed from 'app_icon' to 'ic_launcher'
 
       const DarwinInitializationSettings iOSInitializationSettings =
           DarwinInitializationSettings(
-        requestSoundPermission: true,
-        requestBadgePermission: true,
-        requestAlertPermission: true,
-      );
+            requestSoundPermission: true,
+            requestBadgePermission: true,
+            requestAlertPermission: true,
+          );
 
-      const InitializationSettings initializationSettings = InitializationSettings(
-        android: androidInitializationSettings,
-        iOS: iOSInitializationSettings,
-      );
+      const InitializationSettings initializationSettings =
+          InitializationSettings(
+            android: androidInitializationSettings,
+            iOS: iOSInitializationSettings,
+          );
 
-      debugPrint("[INIT] Awaiting _flutterLocalNotificationsPlugin.initialize()...");
+      debugPrint(
+        "[INIT] Awaiting _flutterLocalNotificationsPlugin.initialize()...",
+      );
       await _flutterLocalNotificationsPlugin.initialize(
         settings: initializationSettings,
         onDidReceiveNotificationResponse: _onNotificationTapped,
@@ -324,12 +369,9 @@ class NotificationService {
       debugPrint("[INIT] Requesting iOS permissions...");
       await _flutterLocalNotificationsPlugin
           .resolvePlatformSpecificImplementation<
-              IOSFlutterLocalNotificationsPlugin>()
-          ?.requestPermissions(
-            alert: true,
-            badge: true,
-            sound: true,
-          );
+            IOSFlutterLocalNotificationsPlugin
+          >()
+          ?.requestPermissions(alert: true, badge: true, sound: true);
       debugPrint("[INIT] ✅ iOS permissions requested");
 
       // Request notification permission on Android 13+
@@ -338,7 +380,7 @@ class NotificationService {
       try {
         final status = await Permission.notification.request();
         debugPrint("[INIT] Notification permission status: $status");
-        
+
         if (status.isGranted) {
           debugPrint("[INIT] ✅ Notification permission granted");
         } else if (status.isDenied) {
@@ -346,7 +388,9 @@ class NotificationService {
           // App will still receive notifications via FCM, just won't show in notification bar
           // User can manually enable in Settings
         } else if (status.isPermanentlyDenied) {
-          debugPrint("[INIT] ⚠️ Notification permission permanently denied - open app settings to enable");
+          debugPrint(
+            "[INIT] ⚠️ Notification permission permanently denied - open app settings to enable",
+          );
         }
       } catch (e) {
         debugPrint("[INIT] ❌ Error requesting notification permission: $e");
@@ -364,12 +408,18 @@ class NotificationService {
 
       // Handle notification tap when app is terminated/closed
       debugPrint("[LISTENER] Setting up getInitialMessage...");
-      FirebaseMessaging.instance.getInitialMessage().then((RemoteMessage? message) {
+      FirebaseMessaging.instance.getInitialMessage().then((
+        RemoteMessage? message,
+      ) {
         if (message != null) {
           debugPrint("[LISTENER] getInitialMessage found message!");
-          final leadData = normalizeLeadCallPayload(message.data);
-          if (leadData != null) {
-            notificationStream.add(leadData);
+          final payload =
+              normalizeCallBatchPayload(message.data) ??
+              normalizeLeadCallPayload(message.data);
+          if (payload != null) {
+            notificationStream.add(
+              _withDeliveryContext(payload, initialMessageDelivery),
+            );
           }
         } else {
           debugPrint("[LISTENER] getInitialMessage - no message");
@@ -381,17 +431,21 @@ class NotificationService {
       debugPrint("[LISTENER] Setting up onMessageOpenedApp listener...");
       FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
         debugPrint("[LISTENER] onMessageOpenedApp triggered!");
-        final leadData = normalizeLeadCallPayload(message.data);
-        if (leadData != null) {
-          notificationStream.add(leadData);
+        final payload =
+            normalizeCallBatchPayload(message.data) ??
+            normalizeLeadCallPayload(message.data);
+        if (payload != null) {
+          notificationStream.add(
+            _withDeliveryContext(payload, openedAppDelivery),
+          );
         }
       });
       debugPrint("[LISTENER] ✅ onMessageOpenedApp listener SET UP and ACTIVE");
-      
+
       debugPrint("[LISTENER] ═══════════════════════════════════════");
       debugPrint("[LISTENER] 🎉 ALL LISTENERS SET UP AND ACTIVE");
       debugPrint("[LISTENER] ═══════════════════════════════════════");
-      
+
       debugPrint("[INIT] initialize() method COMPLETED SUCCESSFULLY");
     } catch (e, stacktrace) {
       debugPrint("[INIT] ❌ ERROR in initialize(): $e");
@@ -404,7 +458,8 @@ class NotificationService {
     const AndroidNotificationChannel channel = AndroidNotificationChannel(
       'high_importance_channel',
       'High Importance Notifications',
-      description: 'This channel is used for important notifications like incoming calls.',
+      description:
+          'This channel is used for important notifications like incoming calls.',
       importance: Importance.max,
       enableVibration: true,
       enableLights: true,
@@ -413,7 +468,8 @@ class NotificationService {
 
     await _flutterLocalNotificationsPlugin
         .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
+          AndroidFlutterLocalNotificationsPlugin
+        >()
         ?.createNotificationChannel(channel);
   }
 
@@ -440,15 +496,17 @@ class NotificationService {
 
     // Extract data from multiple possible sources
     Map<String, dynamic> extractedData = {};
-    
+
     // Try message.data first
     if (message.data.isNotEmpty) {
-      debugPrint("[DATA SOURCE] Using message.data (${message.data.length} keys)");
+      debugPrint(
+        "[DATA SOURCE] Using message.data (${message.data.length} keys)",
+      );
       extractedData.addAll(message.data);
     } else {
       debugPrint("[DATA SOURCE] ⚠️ message.data is EMPTY!");
     }
-    
+
     // Also try notification fields if present
     if (message.notification != null) {
       debugPrint("[DATA SOURCE] Also found message.notification");
@@ -464,7 +522,9 @@ class NotificationService {
     if (batchData != null) {
       debugPrint("[SUCCESS] ✅ Call batch payload recognized!");
       await _showBatchNotification(batchData);
-      notificationStream.add(batchData);
+      notificationStream.add(
+        _withDeliveryContext(batchData, foregroundDelivery),
+      );
       debugPrint("[NOTIFICATION] Batch notification shown and added to stream");
       debugPrint("═════════════════════════════════════════");
       return;
@@ -472,14 +532,16 @@ class NotificationService {
 
     // Otherwise, try single LEAD_CALL
     final leadData = normalizeLeadCallPayload(extractedData);
-    
+
     debugPrint("[PAYLOAD CHECK]");
     debugPrint("Normalized data: $leadData");
-    
+
     if (leadData != null) {
       debugPrint("[SUCCESS] ✅ Lead call payload recognized!");
       await _showCallNotification(leadData);
-      notificationStream.add(leadData);
+      notificationStream.add(
+        _withDeliveryContext(leadData, foregroundDelivery),
+      );
       debugPrint("[NOTIFICATION] Shown and added to stream");
     } else {
       debugPrint("[ERROR] ❌ Failed to normalize payload!");
@@ -495,30 +557,31 @@ class NotificationService {
 
     final AndroidNotificationDetails androidNotificationDetails =
         AndroidNotificationDetails(
-      'high_importance_channel',
-      'High Importance Notifications',
-      channelDescription: 'This channel is used for important notifications.',
-      importance: Importance.max,
-      priority: Priority.high,
-      enableVibration: true,
-      enableLights: true,
-      playSound: true,
-      fullScreenIntent: true,
-      styleInformation: BigTextStyleInformation(
-        'Incoming call from $customerName\n$mobileNo',
-        htmlFormatBigText: true,
-        contentTitle: 'Incoming Call',
-        summaryText: 'Lead Call Alert',
-      ),
-    );
+          'high_importance_channel',
+          'High Importance Notifications',
+          channelDescription:
+              'This channel is used for important notifications.',
+          importance: Importance.max,
+          priority: Priority.high,
+          enableVibration: true,
+          enableLights: true,
+          playSound: true,
+          fullScreenIntent: true,
+          styleInformation: BigTextStyleInformation(
+            'Incoming call from $customerName\n$mobileNo',
+            htmlFormatBigText: true,
+            contentTitle: 'Incoming Call',
+            summaryText: 'Lead Call Alert',
+          ),
+        );
 
     const DarwinNotificationDetails iOSNotificationDetails =
         DarwinNotificationDetails(
-      presentSound: true,
-      presentBadge: true,
-      presentAlert: true,
-      interruptionLevel: InterruptionLevel.timeSensitive,
-    );
+          presentSound: true,
+          presentBadge: true,
+          presentAlert: true,
+          interruptionLevel: InterruptionLevel.timeSensitive,
+        );
 
     final NotificationDetails notificationDetails = NotificationDetails(
       android: androidNotificationDetails,
@@ -541,30 +604,31 @@ class NotificationService {
 
     final AndroidNotificationDetails androidNotificationDetails =
         AndroidNotificationDetails(
-      'high_importance_channel',
-      'High Importance Notifications',
-      channelDescription: 'This channel is used for important notifications.',
-      importance: Importance.max,
-      priority: Priority.high,
-      enableVibration: true,
-      enableLights: true,
-      playSound: true,
-      fullScreenIntent: true,
-      styleInformation: BigTextStyleInformation(
-        'Call Batch with $totalLeads lead calls ready to process',
-        htmlFormatBigText: true,
-        contentTitle: 'Call Batch Arrived',
-        summaryText: 'Batch: $batchName',
-      ),
-    );
+          'high_importance_channel',
+          'High Importance Notifications',
+          channelDescription:
+              'This channel is used for important notifications.',
+          importance: Importance.max,
+          priority: Priority.high,
+          enableVibration: true,
+          enableLights: true,
+          playSound: true,
+          fullScreenIntent: true,
+          styleInformation: BigTextStyleInformation(
+            'Call Batch with $totalLeads lead calls ready to process',
+            htmlFormatBigText: true,
+            contentTitle: 'Call Batch Arrived',
+            summaryText: 'Batch: $batchName',
+          ),
+        );
 
     const DarwinNotificationDetails iOSNotificationDetails =
         DarwinNotificationDetails(
-      presentSound: true,
-      presentBadge: true,
-      presentAlert: true,
-      interruptionLevel: InterruptionLevel.timeSensitive,
-    );
+          presentSound: true,
+          presentBadge: true,
+          presentAlert: true,
+          interruptionLevel: InterruptionLevel.timeSensitive,
+        );
 
     final NotificationDetails notificationDetails = NotificationDetails(
       android: androidNotificationDetails,
@@ -578,7 +642,9 @@ class NotificationService {
       notificationDetails: notificationDetails,
       payload: jsonEncode(data),
     );
-    debugPrint('[BATCH NOTIFICATION] ✅ Batch notification shown with id: $notificationId');
+    debugPrint(
+      '[BATCH NOTIFICATION] ✅ Batch notification shown with id: $notificationId',
+    );
   }
 
   Future<void> _onNotificationTapped(
@@ -586,13 +652,17 @@ class NotificationService {
   ) async {
     debugPrint('Notification tapped: ${notificationResponse.payload}');
 
-    if (notificationResponse.payload != null && notificationResponse.payload!.isNotEmpty) {
+    if (notificationResponse.payload != null &&
+        notificationResponse.payload!.isNotEmpty) {
       try {
         final Map<String, dynamic> data =
             jsonDecode(notificationResponse.payload!) as Map<String, dynamic>;
-        final leadData = normalizeLeadCallPayload(data);
-        if (leadData != null) {
-          notificationStream.add(leadData);
+        final payload =
+            normalizeCallBatchPayload(data) ?? normalizeLeadCallPayload(data);
+        if (payload != null) {
+          notificationStream.add(
+            _withDeliveryContext(payload, localNotificationTapDelivery),
+          );
         }
       } catch (e) {
         debugPrint('Error parsing notification payload: $e');
@@ -611,35 +681,36 @@ class NotificationService {
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
-  
+
   // BUG FIX #3: Initialize FlutterLocalNotificationsPlugin in background isolate
   final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
-  
+
   const AndroidInitializationSettings androidInitializationSettings =
       AndroidInitializationSettings('ic_launcher');
   const DarwinInitializationSettings iOSInitializationSettings =
       DarwinInitializationSettings(
-    requestSoundPermission: true,
-    requestBadgePermission: true,
-    requestAlertPermission: true,
-  );
+        requestSoundPermission: true,
+        requestBadgePermission: true,
+        requestAlertPermission: true,
+      );
   const InitializationSettings initializationSettings = InitializationSettings(
     android: androidInitializationSettings,
     iOS: iOSInitializationSettings,
   );
-  
+
   await flutterLocalNotificationsPlugin.initialize(
     settings: initializationSettings,
     onDidReceiveNotificationResponse: (NotificationResponse response) {
       debugPrint('Background notification tapped: ${response.payload}');
     },
   );
-  
+
   // Create notification channel in background
   const AndroidNotificationChannel channel = AndroidNotificationChannel(
     'high_importance_channel',
     'High Importance Notifications',
-    description: 'This channel is used for important notifications like incoming calls.',
+    description:
+        'This channel is used for important notifications like incoming calls.',
     importance: Importance.max,
     enableVibration: true,
     enableLights: true,
@@ -648,9 +719,10 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
   await flutterLocalNotificationsPlugin
       .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>()
+        AndroidFlutterLocalNotificationsPlugin
+      >()
       ?.createNotificationChannel(channel);
-  
+
   debugPrint('========== BACKGROUND MESSAGE HANDLER ==========');
   debugPrint('[BG][PUSH] push received');
   debugPrint('Message ID: ${message.messageId}');
@@ -659,13 +731,13 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
   // Extract data from multiple possible sources
   Map<String, dynamic> extractedData = {};
-  
+
   // Try message.data first
   if (message.data.isNotEmpty) {
     debugPrint("[BG] Using message.data");
     extractedData.addAll(message.data);
   }
-  
+
   // Also try notification fields if present
   if (message.notification != null) {
     debugPrint("[BG] Also found message.notification");
@@ -677,13 +749,20 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   debugPrint("[BG][PUSH] payload parsed");
 
   // Try to detect CALL_BATCH first
-  final batchData = NotificationService.normalizeCallBatchPayload(extractedData);
+  final batchData = NotificationService.normalizeCallBatchPayload(
+    extractedData,
+  );
   if (batchData != null) {
     debugPrint("[BG] ✅ Call batch detected");
     final leads = batchData['leads'] as List<dynamic>? ?? [];
-    debugPrint("[BG][BATCH] Batch contains ${leads.length} leads - queue will be fetched from API");
+    debugPrint(
+      "[BG][BATCH] Batch contains ${leads.length} leads - queue will be fetched from API",
+    );
     debugPrint("[BG] 🔔 Showing batch notification");
-    await _showBatchNotificationInBackground(flutterLocalNotificationsPlugin, batchData);
+    await _showBatchNotificationInBackground(
+      flutterLocalNotificationsPlugin,
+      batchData,
+    );
     debugPrint('========== END BACKGROUND MESSAGE HANDLER ==========');
     return;
   }
@@ -691,10 +770,15 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   // Otherwise, process as single LEAD_CALL
   final leadData = NotificationService.normalizeLeadCallPayload(extractedData);
   if (leadData != null) {
-    debugPrint("[BG][QUEUE] Notification received for: ${leadData['customer_name']}");
+    debugPrint(
+      "[BG][QUEUE] Notification received for: ${leadData['customer_name']}",
+    );
     debugPrint("[BG][QUEUE] Queue will be refreshed from API");
     debugPrint("[BG] ✅ Showing notification for: ${leadData['customer_name']}");
-    await _showCallNotificationInBackground(flutterLocalNotificationsPlugin, leadData);
+    await _showCallNotificationInBackground(
+      flutterLocalNotificationsPlugin,
+      leadData,
+    );
   } else {
     debugPrint("[BG] ❌ Failed to normalize payload");
     debugPrint("[BG] Raw data was: $extractedData");
@@ -709,7 +793,7 @@ Future<void> _showCallNotificationInBackground(
 ) async {
   final customerName = data['customer_name'] ?? 'Incoming Call';
   final mobileNo = data['mobile_no'] ?? 'Unknown';
-  
+
   // Use the same ID generation logic
   final seed =
       '${data['docname']}_${data['mobile_no']}_${data['queued_at'] ?? DateTime.now().toIso8601String()}';
@@ -717,30 +801,30 @@ Future<void> _showCallNotificationInBackground(
 
   final AndroidNotificationDetails androidNotificationDetails =
       AndroidNotificationDetails(
-    'high_importance_channel',
-    'High Importance Notifications',
-    channelDescription: 'This channel is used for important notifications.',
-    importance: Importance.max,
-    priority: Priority.high,
-    enableVibration: true,
-    enableLights: true,
-    playSound: true,
-    fullScreenIntent: true,
-    styleInformation: BigTextStyleInformation(
-      'Incoming call from $customerName\n$mobileNo',
-      htmlFormatBigText: true,
-      contentTitle: 'Incoming Call',
-      summaryText: 'Lead Call Alert',
-    ),
-  );
+        'high_importance_channel',
+        'High Importance Notifications',
+        channelDescription: 'This channel is used for important notifications.',
+        importance: Importance.max,
+        priority: Priority.high,
+        enableVibration: true,
+        enableLights: true,
+        playSound: true,
+        fullScreenIntent: true,
+        styleInformation: BigTextStyleInformation(
+          'Incoming call from $customerName\n$mobileNo',
+          htmlFormatBigText: true,
+          contentTitle: 'Incoming Call',
+          summaryText: 'Lead Call Alert',
+        ),
+      );
 
   const DarwinNotificationDetails iOSNotificationDetails =
       DarwinNotificationDetails(
-    presentSound: true,
-    presentBadge: true,
-    presentAlert: true,
-    interruptionLevel: InterruptionLevel.timeSensitive,
-  );
+        presentSound: true,
+        presentBadge: true,
+        presentAlert: true,
+        interruptionLevel: InterruptionLevel.timeSensitive,
+      );
 
   final NotificationDetails notificationDetails = NotificationDetails(
     android: androidNotificationDetails,
@@ -766,30 +850,30 @@ Future<void> _showBatchNotificationInBackground(
 
   final AndroidNotificationDetails androidNotificationDetails =
       AndroidNotificationDetails(
-    'high_importance_channel',
-    'High Importance Notifications',
-    channelDescription: 'This channel is used for important notifications.',
-    importance: Importance.max,
-    priority: Priority.high,
-    enableVibration: true,
-    enableLights: true,
-    playSound: true,
-    fullScreenIntent: true,
-    styleInformation: BigTextStyleInformation(
-      'Call Batch with $totalLeads lead calls ready to process',
-      htmlFormatBigText: true,
-      contentTitle: 'Call Batch Arrived',
-      summaryText: 'Batch: $batchName',
-    ),
-  );
+        'high_importance_channel',
+        'High Importance Notifications',
+        channelDescription: 'This channel is used for important notifications.',
+        importance: Importance.max,
+        priority: Priority.high,
+        enableVibration: true,
+        enableLights: true,
+        playSound: true,
+        fullScreenIntent: true,
+        styleInformation: BigTextStyleInformation(
+          'Call Batch with $totalLeads lead calls ready to process',
+          htmlFormatBigText: true,
+          contentTitle: 'Call Batch Arrived',
+          summaryText: 'Batch: $batchName',
+        ),
+      );
 
   const DarwinNotificationDetails iOSNotificationDetails =
       DarwinNotificationDetails(
-    presentSound: true,
-    presentBadge: true,
-    presentAlert: true,
-    interruptionLevel: InterruptionLevel.timeSensitive,
-  );
+        presentSound: true,
+        presentBadge: true,
+        presentAlert: true,
+        interruptionLevel: InterruptionLevel.timeSensitive,
+      );
 
   final NotificationDetails notificationDetails = NotificationDetails(
     android: androidNotificationDetails,
