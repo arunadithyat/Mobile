@@ -1,3 +1,5 @@
+enum CallQueueStatus { pending, cancelled }
+
 class CallQueueItem {
   final String doctype;
   final String docname;
@@ -5,6 +7,7 @@ class CallQueueItem {
   final String mobileNo;
   final DateTime queuedAt;
   final String autoCall;
+  CallQueueStatus status;
 
   CallQueueItem({
     required this.doctype,
@@ -13,7 +16,11 @@ class CallQueueItem {
     required this.mobileNo,
     required this.queuedAt,
     this.autoCall = "1",
+    this.status = CallQueueStatus.pending,
   });
+
+  bool get isCancelled => status == CallQueueStatus.cancelled;
+  bool get isPending => status == CallQueueStatus.pending;
 
   Map<String, dynamic> toMap() {
     return {
@@ -24,6 +31,7 @@ class CallQueueItem {
       'mobile_no': mobileNo,
       'auto_call': autoCall,
       'queued_at': queuedAt.toIso8601String(),
+      'status': status.name,
     };
   }
 
@@ -37,6 +45,9 @@ class CallQueueItem {
           ? DateTime.parse(data['queued_at'])
           : DateTime.now(),
       autoCall: data['auto_call'] ?? '1',
+      status: data['status'] == 'cancelled'
+          ? CallQueueStatus.cancelled
+          : CallQueueStatus.pending,
     );
   }
 
@@ -82,6 +93,22 @@ class CallQueue {
   bool get isEmpty => _queue.isEmpty;
 
   bool get isNotEmpty => _queue.isNotEmpty;
+
+  /// Marks a call as cancelled but keeps it in the same position
+  void markCancelled(int index) {
+    if (index >= 0 && index < _queue.length) {
+      _queue[index].status = CallQueueStatus.cancelled;
+    }
+  }
+
+  /// Restores a cancelled call back to pending
+  void restorePending(int index) {
+    if (index >= 0 && index < _queue.length) {
+      _queue[index].status = CallQueueStatus.pending;
+    }
+  }
+
+  int get pendingCount => _queue.where((i) => i.isPending).length;
 
   void reorder(int oldIndex, int newIndex) {
     if (oldIndex < 0 || oldIndex >= _queue.length) return;
