@@ -63,6 +63,14 @@ class MainActivity : FlutterActivity() {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.READ_CALL_LOG), REQUEST_CALL_LOG_PERMISSION)
           }
         }
+        "getIncomingCallsSince" -> {
+          val sinceMs = call.argument<Number>("sinceMs")?.toLong() ?: 0L
+          if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALL_LOG) != PackageManager.PERMISSION_GRANTED) {
+            result.success(emptyList<Map<String, Any>>())
+          } else {
+            result.success(getIncomingCallsSince(sinceMs))
+          }
+        }
         else -> result.notImplemented()
       }
     }
@@ -143,6 +151,53 @@ class MainActivity : FlutterActivity() {
         else -> {}
       }
     }
+  }
+
+  /// Returns incoming + missed + rejected calls since the given timestamp,
+  /// newest first, capped at 100 entries.
+  private fun getIncomingCallsSince(sinceMs: Long): List<Map<String, Any>> {
+    val projection = arrayOf(CallLog.Calls.NUMBER, CallLog.Calls.TYPE, CallLog.Calls.DURATION, CallLog.Calls.DATE)
+    val selection = "${CallLog.Calls.DATE} > ? AND ${CallLog.Calls.TYPE} IN (?, ?, ?)"
+    val selectionArgs = arrayOf(
+      sinceMs.toString(),
+      CallLog.Calls.INCOMING_TYPE.toString(),
+      CallLog.Calls.MISSED_TYPE.toString(),
+      CallLog.Calls.REJECTED_TYPE.toString(),
+    )
+    val cursor = contentResolver.query(
+      CallLog.Calls.CONTENT_URI,
+      projection,
+      selection,
+      selectionArgs,
+      "${CallLog.Calls.DATE} DESC"
+    )
+
+    val results = mutableListOf<Map<String, Any>>()
+    cursor?.use {
+      val numberIndex = it.getColumnIndexOrThrow(CallLog.Calls.NUMBER)
+      val typeIndex = it.getColumnIndexOrThrow(CallLog.Calls.TYPE)
+      val durationIndex = it.getColumnIndexOrThrow(CallLog.Calls.DURATION)
+      val dateIndex = it.getColumnIndexOrThrow(CallLog.Calls.DATE)
+
+      while (it.moveToNext() && results.size < 100) {
+        val callType = it.getInt(typeIndex)
+        val duration = it.getInt(durationIndex)
+        val typeName = when (callType) {
+          CallLog.Calls.INCOMING_TYPE -> "incoming"
+          CallLog.Calls.MISSED_TYPE -> "missed"
+          CallLog.Calls.REJECTED_TYPE -> "rejected"
+          else -> "other"
+        }
+        results.add(mapOf(
+          "number" to (it.getString(numberIndex) ?: ""),
+          "type" to typeName,
+          "durationSeconds" to duration,
+          "timestamp" to it.getLong(dateIndex),
+          "attended" to (callType == CallLog.Calls.INCOMING_TYPE && duration > 0),
+        ))
+      }
+    }
+    return results
   }
 
   private fun getLastCallInfo(phoneNumber: String, initiatedAtMs: Long): Map<String, Any> {

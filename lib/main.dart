@@ -208,7 +208,41 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _listenForTokenRefresh();
     await _loadPendingQueue();
     await _drainBackgroundQueuedCalls();
+    await _syncIncomingDeviceCalls();
     // Opportunities are loaded manually via Pull-to-refresh only
+  }
+
+  /// Reads the device call log for incoming/missed calls since the last
+  /// sync and sends them to the backend. The backend matches numbers
+  /// against Lead/Opportunity and creates Call Log entries when relevant.
+  Future<void> _syncIncomingDeviceCalls() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final lastSyncMs = prefs.getInt('last_incoming_sync') ?? 0;
+      // First run: look back 24h; after that, only since last sync
+      final since = lastSyncMs > 0
+          ? DateTime.fromMillisecondsSinceEpoch(lastSyncMs)
+          : DateTime.now().subtract(const Duration(hours: 24));
+
+      final calls = await AutoDialer.getIncomingCallsSince(since);
+      debugPrint("[INCOMING_SYNC] Found ${calls.length} incoming call(s) since $since");
+      if (calls.isEmpty) {
+        await prefs.setInt('last_incoming_sync', DateTime.now().millisecondsSinceEpoch);
+        return;
+      }
+
+      final ok = await IncomingCallSyncApi.syncIncomingCalls(calls);
+      if (ok) {
+        // Only advance the watermark on a successful sync, so failed
+        // batches are retried on the next run
+        await prefs.setInt('last_incoming_sync', DateTime.now().millisecondsSinceEpoch);
+        debugPrint("[INCOMING_SYNC] ✅ Synced and watermark updated");
+      } else {
+        debugPrint("[INCOMING_SYNC] ⚠️ Sync failed — will retry next launch/resume");
+      }
+    } catch (e) {
+      debugPrint("[INCOMING_SYNC] Error: $e");
+    }
   }
 
   /// Calls received via FCM while the app was in background/killed are
@@ -952,6 +986,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       // Pick up any calls that arrived while we were backgrounded
       _drainBackgroundQueuedCalls();
+      _syncIncomingDeviceCalls();
     }
   }
 

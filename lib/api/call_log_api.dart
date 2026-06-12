@@ -259,3 +259,38 @@ class CallLogApi {
   }
 }
 
+
+/// Syncs device incoming calls to the backend. The backend decides
+/// relevance (matches mobile numbers against Lead/Opportunity) and
+/// creates Call Log entries for matched numbers.
+class IncomingCallSyncApi {
+  static Future<bool> syncIncomingCalls(
+    List<Map<String, dynamic>> calls,
+  ) async {
+    if (calls.isEmpty) return true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cookie = prefs.getString('cookie') ?? '';
+      if (cookie.isEmpty) {
+        debugPrint('[INCOMING_SYNC] No session — skipping sync');
+        return false;
+      }
+
+      debugPrint('[INCOMING_SYNC] Syncing ${calls.length} incoming call(s)...');
+      final response = await http.post(
+        Uri.parse(AppConfig.syncIncomingCallsApi),
+        headers: {
+          'Content-Type': 'application/json',
+          'Cookie': cookie,
+        },
+        body: jsonEncode({'calls': calls}),
+      ).timeout(const Duration(seconds: 15));
+
+      debugPrint('[INCOMING_SYNC] Response: ${response.statusCode}');
+      return response.statusCode == 200;
+    } catch (e) {
+      debugPrint('[INCOMING_SYNC] Error: $e');
+      return false;
+    }
+  }
+}

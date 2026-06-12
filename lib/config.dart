@@ -18,6 +18,11 @@ class AppConfig {
   static const String callQueueApi =
       "$baseUrl/api/method/callqueue";
 
+  // Receives device incoming-call entries; backend matches the number
+  // against Lead/Opportunity and creates a Call Log when relevant.
+  static const String syncIncomingCallsApi =
+      "$baseUrl/api/method/itgenie.lead_calling.mobile_api.sync_incoming_calls";
+
   // Fix #9: Pause interval options moved to config
   static const List<int> pauseIntervalOptions = [5, 15, 30];
 }

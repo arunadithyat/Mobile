@@ -184,4 +184,26 @@ class AutoDialer {
       return false;
     }
   }
+
+  /// Returns the device's incoming/missed/rejected calls since [since].
+  /// Each entry: {number, type, durationSeconds, timestamp, attended}
+  static Future<List<Map<String, dynamic>>> getIncomingCallsSince(
+    DateTime since,
+  ) async {
+    if (!Platform.isAndroid) return [];
+    try {
+      final result = await _channel.invokeMethod<List<dynamic>>(
+        'getIncomingCallsSince',
+        {'sinceMs': since.millisecondsSinceEpoch},
+      );
+      if (result == null) return [];
+      return result
+          .whereType<Map>()
+          .map((m) => Map<String, dynamic>.from(m))
+          .toList();
+    } catch (e) {
+      debugPrint('[DIALER] ❌ getIncomingCallsSince error: $e');
+      return [];
+    }
+  }
 }
