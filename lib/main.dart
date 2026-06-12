@@ -187,12 +187,37 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _appLifecycleState =
         WidgetsBinding.instance.lifecycleState ?? AppLifecycleState.resumed;
-    _loadPendingQueue();
-    _requestCallTelemetryPermissions();
-    getFcmToken();
-    _initializeNotifications();
     _listenForTokenRefresh();
-    fetchOpportunities();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeHome();
+    });
+  }
+
+  Future<void> _initializeHome() async {
+    await _initializeNotifications();
+    if (!mounted) return;
+
+    final notificationStatus = await NotificationService()
+        .requestNotificationPermission();
+    if (!mounted) return;
+    if (!notificationStatus.isGranted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Notification permission is required for call queue alerts',
+          ),
+          action: SnackBarAction(label: 'Settings', onPressed: openAppSettings),
+        ),
+      );
+    }
+
+    await getFcmToken();
+    if (!mounted) return;
+
+    await _requestCallTelemetryPermissions();
+    if (!mounted) return;
+
+    await Future.wait([_loadPendingQueue(), fetchOpportunities()]);
   }
 
   Future<void> _requestCallTelemetryPermissions() async {
@@ -250,7 +275,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return callQueue.length;
   }
 
-  Future<void> _refreshQueueAfterPush({required bool autoProcess}) async {
+  Future<void> _refreshQueueAfterPush({
+    required bool autoProcess,
+    String? expectedDocname,
+    String? expectedMobileNo,
+  }) async {
     const retryDelays = <Duration>[
       Duration.zero,
       Duration(seconds: 1),
@@ -263,6 +292,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         .map((item) => '${item.docname}::${item.mobileNo}')
         .toSet();
     var queueCount = 0;
+    CallQueueItem? verifiedItem;
     for (var attempt = 0; attempt < retryDelays.length; attempt++) {
       final delay = retryDelays[attempt];
       if (delay > Duration.zero) await Future.delayed(delay);
@@ -273,27 +303,46 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         '[QUEUE][PUSH] endpoint attempt ${attempt + 1}/${retryDelays.length}: '
         '$queueCount item(s)',
       );
-      if (queueCount > 0) break;
+      if ((expectedDocname ?? '').isNotEmpty) {
+        for (final item in callQueue.getAll()) {
+          final docnameMatches = item.docname == expectedDocname;
+          final mobileMatches =
+              (expectedMobileNo ?? '').isEmpty ||
+              item.mobileNo == expectedMobileNo;
+          if (docnameMatches && mobileMatches) {
+            verifiedItem = item;
+            break;
+          }
+        }
+        if (verifiedItem != null) break;
+      } else {
+        final newItems = callQueue.getAll().where((item) {
+          return !existingKeys.contains('${item.docname}::${item.mobileNo}');
+        });
+        if (newItems.isNotEmpty) {
+          verifiedItem = newItems.first;
+          break;
+        }
+      }
     }
 
     final addedItems = callQueue.getAll().where((item) {
       return !existingKeys.contains('${item.docname}::${item.mobileNo}');
     }).toList();
 
-    if (autoProcess && addedItems.isNotEmpty) {
+    if (autoProcess && verifiedItem != null) {
       await NotificationService().showVerifiedQueueNotification(
-        addedCount: addedItems.length,
-        customerName: addedItems.first.customerName,
+        addedCount: addedItems.isEmpty ? 1 : addedItems.length,
+        customerName: verifiedItem.customerName,
       );
     }
 
-    final firstQueueItem = callQueue.get(0);
     if (autoProcess &&
-        queueCount > 0 &&
-        firstQueueItem?.autoCall == '1' &&
+        verifiedItem != null &&
+        verifiedItem.autoCall == '1' &&
         _isAppActive &&
         !isCallFlowPaused) {
-      await _processFirstQueuedCall();
+      await _processQueuedCall(verifiedItem);
     }
   }
 
@@ -320,29 +369,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
     debugPrint("═════════════════════════════════════════");
     debugPrint("[FCM] Starting FCM initialization...");
-
-    // Request permissions
-    debugPrint("[FCM] Requesting notification permissions...");
-    final settings = await messaging.requestPermission(
-      alert: true,
-      announcement: false,
-      badge: true,
-      carPlay: false,
-      criticalAlert: false,
-      provisional: false,
-      sound: true,
-    );
-    debugPrint("[FCM] Permission status: ${settings.authorizationStatus}");
-    debugPrint("[FCM] Authorization status details:");
-    debugPrint(
-      "     - isEnabled: ${settings.authorizationStatus == AuthorizationStatus.authorized}",
-    );
-    debugPrint(
-      "     - isSilent: ${settings.authorizationStatus == AuthorizationStatus.provisional}",
-    );
-    debugPrint(
-      "     - isDenied: ${settings.authorizationStatus == AuthorizationStatus.denied}",
-    );
 
     // Get token
     debugPrint("[FCM] Getting FCM token...");
@@ -446,6 +472,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
     await _refreshQueueAfterPush(
       autoProcess: isForegroundDelivery && _isAppActive && !isCallFlowPaused,
+      expectedDocname: data['docname']?.toString(),
+      expectedMobileNo: data['mobile_no']?.toString(),
     );
   }
 
@@ -511,6 +539,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Future<void> _processFirstQueuedCall() async {
+    final call = callQueue.get(0);
+    if (call == null) return;
+    await _processQueuedCall(call);
+  }
+
+  Future<void> _processQueuedCall(CallQueueItem call) async {
     if (!mounted ||
         !_isAppActive ||
         isCallFlowPaused ||
@@ -518,9 +552,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         _processingLock) {
       return;
     }
-
-    final call = callQueue.get(0);
-    if (call == null) return;
 
     _processingLock = true;
     setState(() => _isLeadCallInProgress = true);
