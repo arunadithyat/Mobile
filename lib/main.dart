@@ -182,6 +182,7 @@ class _HomePageState extends State<HomePage> {
   Map<String, dynamic>? _lastPushNormalized;
   final CallQueue callQueue = CallQueue();
   bool _isLeadCallInProgress = false;
+  bool _processingLock = false; // Prevents race condition on simultaneous notifications
 
   bool get isCallFlowPaused {
     if (pausedUntil == null) return false;
@@ -509,9 +510,14 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
-    if (isCallFlowPaused || _isLeadCallInProgress) {
-      debugPrint("⏸️ Call flow is paused. Adding to queue...");
-      final reason = isCallFlowPaused ? "paused_flow" : "already_in_call";
+    // If already processing a call OR lock is held by another notification, queue immediately
+    if (isCallFlowPaused || _isLeadCallInProgress || _processingLock) {
+      debugPrint("⏸️ Call flow busy. Adding to queue...");
+      final reason = isCallFlowPaused
+          ? "paused_flow"
+          : _processingLock
+              ? "processing_lock"
+              : "already_in_call";
       await _enqueueLeadCall(normalized, reason: reason);
       if (!mounted) return;
       setState(() {
@@ -530,6 +536,8 @@ class _HomePageState extends State<HomePage> {
     }
 
     debugPrint("✅ Navigating to LeadCallScreen");
+    // Acquire lock immediately to prevent race condition
+    _processingLock = true;
     setState(() {
       _isLeadCallInProgress = true;
     });
@@ -543,6 +551,7 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       _isLeadCallInProgress = false;
     });
+    _processingLock = false;
     if (routeResult is Map<String, dynamic> && routeResult['status'] == 'cancelled') {
       // Add to queue as cancelled — keeps position, user can restore and call later
       await _enqueueLeadCall(normalized, reason: "manual_cancel");
