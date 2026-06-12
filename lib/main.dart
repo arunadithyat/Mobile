@@ -216,7 +216,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Future<void> _drainBackgroundQueuedCalls() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      // CRITICAL: the background isolate wrote to disk, but this isolate's
+      // SharedPreferences cache is stale — reload() re-reads from disk.
+      await prefs.reload();
       final stored = prefs.getStringList('bg_pending_calls') ?? [];
+      debugPrint("[QUEUE][BG] Drain check — found ${stored.length} stored call(s)");
       if (stored.isEmpty) return;
       await prefs.remove('bg_pending_calls');
       debugPrint("[QUEUE][BG] Draining ${stored.length} background call(s) into queue");
