@@ -33,16 +33,26 @@ class _CallHistoryTabState extends State<CallHistoryTab> {
     switch (status.toLowerCase()) {
       case 'connected':
         return Colors.green;
+      case 'customer called back':
+        return Colors.blue;
       case 'missed':
+      case 'missed call':
         return Colors.orange;
       case 'not answered':
       case 'not connected':
         return Colors.red;
+      case 'rejected':
+        return Colors.red.shade800;
       case 'cancelled':
         return Colors.grey;
       default:
         return Colors.blueGrey;
     }
+  }
+
+  bool _isIncoming(String status) {
+    return ['customer called back', 'missed call', 'rejected']
+        .contains(status.toLowerCase());
   }
 
   String _formatDuration(int seconds) {
@@ -113,7 +123,11 @@ class _CallHistoryTabState extends State<CallHistoryTab> {
             leading: CircleAvatar(
               radius: 18,
               backgroundColor: color.withValues(alpha: 0.12),
-              child: Icon(Icons.call_made, size: 18, color: color),
+              child: Icon(
+                _isIncoming(e.status) ? Icons.call_received : Icons.call_made,
+                size: 18,
+                color: color,
+              ),
             ),
             title: Text(
               e.customerName.isEmpty ? e.mobileNo : e.customerName,

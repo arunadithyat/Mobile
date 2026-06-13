@@ -214,14 +214,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     await _syncIncomingDeviceCalls();
   }
 
-  /// Reads the device call log for incoming/missed calls since the last
-  /// sync and sends them to the backend. The backend matches numbers
-  /// against Lead/Opportunity and creates Call Log entries when relevant.
+  /// Scans device incoming calls, matches against call queue, and
+  /// logs matched calls in call history.
   Future<void> _syncIncomingDeviceCalls() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final lastSyncMs = prefs.getInt('last_incoming_sync') ?? 0;
-      // First run: look back 24h; after that, only since last sync
       final since = lastSyncMs > 0
           ? DateTime.fromMillisecondsSinceEpoch(lastSyncMs)
           : DateTime.now().subtract(const Duration(hours: 24));
@@ -233,18 +231,79 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         return;
       }
 
+      // Match incoming calls against call queue entries
+      final queueItems = callQueue.getAll();
+      int matched = 0;
+
+      for (final call in calls) {
+        final incomingNumber = _last10(call['number']?.toString() ?? '');
+        if (incomingNumber.isEmpty) continue;
+
+        // Find matching queue entry by last 10 digits
+        for (final item in queueItems) {
+          final queueNumber = _last10(item.mobileNo);
+          if (queueNumber == incomingNumber) {
+            matched++;
+            final callType = call['type']?.toString() ?? 'unknown';
+            final attended = call['attended'] == true;
+            final durationSeconds = call['durationSeconds'] is int
+                ? call['durationSeconds'] as int
+                : int.tryParse(call['durationSeconds']?.toString() ?? '0') ?? 0;
+            final timestamp = call['timestamp'] is int
+                ? DateTime.fromMillisecondsSinceEpoch(call['timestamp'] as int)
+                : DateTime.now();
+
+            // Determine status
+            String status;
+            if (callType == 'missed') {
+              status = 'Missed Call';
+            } else if (callType == 'rejected') {
+              status = 'Rejected';
+            } else if (attended && durationSeconds > 0) {
+              status = 'Customer Called Back';
+            } else {
+              status = 'Missed Call';
+            }
+
+            // Add to local call history
+            await CallHistoryStorage.add(CallHistoryEntry(
+              customerName: item.customerName,
+              mobileNo: item.mobileNo,
+              doctype: item.doctype,
+              docname: item.docname,
+              status: status,
+              durationSeconds: durationSeconds,
+              calledAt: timestamp,
+            ));
+
+            debugPrint(
+                "[INCOMING_SYNC] 📞 Matched: ${item.customerName} ($incomingNumber) — $status ${durationSeconds}s");
+            break; // one match per incoming call
+          }
+        }
+      }
+
+      debugPrint("[INCOMING_SYNC] ✅ $matched matched out of ${calls.length} incoming calls");
+
+      // Also sync to backend
       final ok = await IncomingCallSyncApi.syncIncomingCalls(calls);
       if (ok) {
-        // Only advance the watermark on a successful sync, so failed
-        // batches are retried on the next run
         await prefs.setInt('last_incoming_sync', DateTime.now().millisecondsSinceEpoch);
         debugPrint("[INCOMING_SYNC] ✅ Synced and watermark updated");
       } else {
-        debugPrint("[INCOMING_SYNC] ⚠️ Sync failed — will retry next launch/resume");
+        debugPrint("[INCOMING_SYNC] ⚠️ Backend sync failed — will retry next launch/resume");
       }
+
+      if (matched > 0 && mounted) setState(() {});
     } catch (e) {
       debugPrint("[INCOMING_SYNC] Error: $e");
     }
+  }
+
+  /// Returns last 10 digits of a phone number for matching.
+  String _last10(String number) {
+    final digits = number.replaceAll(RegExp(r'[^\d]'), '');
+    return digits.length >= 10 ? digits.substring(digits.length - 10) : digits;
   }
 
   Future<void> _requestCallTelemetryPermissions() async {
