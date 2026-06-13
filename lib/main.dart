@@ -201,13 +201,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// permission dialog if another one is already showing. This is why the
   /// notification permission was never asked on fresh installs.
   Future<void> _bootstrap() async {
+    // Load queue FIRST so user sees data immediately
+    _refreshQueueDisplay();
+
+    // Then permissions + FCM (these can take time with dialogs)
     await _requestCallTelemetryPermissions();
     final notifStatus = await Permission.notification.request();
     debugPrint("[BOOT] Notification permission: $notifStatus");
     await getFcmToken();
     await _initializeNotifications();
     _listenForTokenRefresh();
-    await _refreshQueueDisplay();
     await _syncIncomingDeviceCalls();
   }
 
@@ -1527,7 +1530,7 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
       (dynamic event) {
         if (event is Map) {
           final state = event['state'];
-          if (state == 'CALL_ENDED' && callStarted && !_wasBackgroundedDuringCall) {
+          if (state == 'CALL_ENDED' && callStarted) {
             _handleDirectCallEnd();
           }
         }
@@ -1807,12 +1810,11 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
         callTriggered = false;
         if (mounted) Navigator.pop(context, {'status': 'cancelled'});
       } else {
-        // User was on the call — check call log to determine outcome
-        debugPrint('[CALL] Resume after call — checking outcome');
-        callDurationTimer?.cancel();
-        callStarted = false;
-        callStartTime = null;
-        if (mounted) _handleResumeAfterCall();
+        // User came back to app — call might still be active!
+        // DON'T show completion dialog yet. Let CALL_ENDED handle it.
+        // Re-enable the call state listener to catch the actual end.
+        debugPrint('[CALL] Resume while call may still be active — waiting for CALL_ENDED');
+        _wasBackgroundedDuringCall = false;
       }
     }
   }
