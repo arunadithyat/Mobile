@@ -174,6 +174,19 @@ class AutoDialer {
     };
   }
 
+  /// Returns true if the device is currently on a phone call
+  /// (active, dialing, or ringing).
+  static Future<bool> isOnCall() async {
+    if (!Platform.isAndroid) return false;
+    try {
+      final result = await _channel.invokeMethod<bool>('isOnCall');
+      return result == true;
+    } catch (e) {
+      debugPrint('[DIALER] ❌ isOnCall error: $e');
+      return false;
+    }
+  }
+
   static Future<bool> ensureCallLogPermission() async {
     if (!Platform.isAndroid) return true;
     try {

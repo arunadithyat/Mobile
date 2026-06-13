@@ -549,7 +549,28 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       return;
     }
 
-    debugPrint("✅ FCM trigger — showing Incoming Lead and auto-calling");
+    debugPrint("✅ FCM trigger — checking if user is already on a call...");
+
+    // Check if user is already on a phone call — don't interrupt!
+    final alreadyOnCall = await AutoDialer.isOnCall();
+    if (alreadyOnCall) {
+      debugPrint("📞 User is on another call — queuing silently, no auto-dial");
+      await _refreshQueueDisplay();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'New call from ${normalized["customer_name"] ?? "Unknown"} added to queue',
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      setState(() { _lastPushAction = "queued_on_call"; });
+      debugPrint("========== END INCOMING LEAD CALL ==========");
+      return;
+    }
+
+    debugPrint("✅ User is free — showing Incoming Lead and auto-calling");
     // Show Incoming Lead screen directly with FCM payload data
     _processingLock = true;
     setState(() { _isLeadCallInProgress = true; });
@@ -1822,8 +1843,9 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
     }
   }
 
-  /// Polls the device call log to detect when the call actually ends.
-  /// Runs every 3 seconds until the call is found in the log or timeout.
+  /// Polls to detect when the call actually ends.
+  /// First checks if phone is still on a call — only reads call log
+  /// when the phone is idle (prevents reading old entries).
   void _pollForCallEnd() {
     int attempts = 0;
     const maxAttempts = 20; // 60 seconds max
@@ -1835,30 +1857,40 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
         return;
       }
 
+      // CHECK 1: Is the phone still on a call?
+      final stillOnCall = await AutoDialer.isOnCall();
+      if (stillOnCall) {
+        debugPrint('[CALL] Poll #$attempts — phone still on call, waiting...');
+        return; // keep polling, don't check call log yet
+      }
+
+      // Phone is idle — call has ended. Now check call log for outcome.
+      debugPrint('[CALL] Poll #$attempts — phone idle, checking call log...');
+      timer.cancel();
+
+      // Wait 1.5s for Android to write the call log entry
+      await Future.delayed(const Duration(milliseconds: 1500));
+      if (!mounted || !callStarted) return;
+
       final mobileNo = widget.data["mobile_no"]?.toString() ?? "";
       if (mobileNo.isEmpty) {
-        timer.cancel();
         callStarted = false;
         if (mounted) _showCallCompletionDialog();
         return;
       }
 
       final callInfo = await _fetchCallInfoWithRetry(mobileNo);
-      if (callInfo['found'] == true) {
-        // Call log entry found — call has ended
-        timer.cancel();
-        debugPrint('[CALL] Poll detected call ended after ${attempts * 3}s');
-        callDurationTimer?.cancel();
-        callStarted = false;
-        callStartTime = null;
+      callDurationTimer?.cancel();
+      callStarted = false;
+      callStartTime = null;
 
+      if (callInfo['found'] == true) {
         final attended = callInfo['attended'] == true;
         final durationSeconds = callInfo['durationSeconds'] is int
             ? callInfo['durationSeconds'] as int
             : int.tryParse(callInfo['durationSeconds']?.toString() ?? '0') ?? 0;
 
         if (!attended && durationSeconds == 0) {
-          // Not answered
           unawaited(CallHistoryStorage.add(CallHistoryEntry(
             customerName: widget.data["customer_name"]?.toString() ?? '',
             mobileNo: mobileNo,
@@ -1887,7 +1919,6 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
           ));
           if (mounted) Navigator.pop(context, {'status': 'not_connected'});
         } else {
-          // Answered — show completion dialog
           if (mounted) {
             _showCallCompletionDialog(
               callDuration: Duration(seconds: durationSeconds),
@@ -1902,14 +1933,9 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
             );
           }
         }
-      } else if (attempts >= maxAttempts) {
-        // Timeout — show manual completion dialog
-        timer.cancel();
-        debugPrint('[CALL] Poll timeout — showing manual dialog');
-        callStarted = false;
+      } else {
         if (mounted) _showCallCompletionDialog();
       }
-      // else: call still active — keep polling
     });
   }
 
