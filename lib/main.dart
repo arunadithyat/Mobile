@@ -1542,7 +1542,8 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
   }
 
   Future<void> _handleDirectCallEnd() async {
-    if (!mounted) return;
+    if (!mounted || !callStarted) return; // guard against double-trigger with poll
+    callStarted = false;
     callDurationTimer?.cancel();
     final mobileNo = widget.data["mobile_no"]?.toString() ?? "";
     if (mobileNo.isNotEmpty) {
@@ -1810,13 +1811,106 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
         callTriggered = false;
         if (mounted) Navigator.pop(context, {'status': 'cancelled'});
       } else {
-        // User came back to app — call might still be active!
-        // DON'T show completion dialog yet. Let CALL_ENDED handle it.
-        // Re-enable the call state listener to catch the actual end.
-        debugPrint('[CALL] Resume while call may still be active — waiting for CALL_ENDED');
+        // User came back to app — call might still be active.
+        // Wait a moment then check device call log to detect if call ended.
+        // This handles both: user still on call (no dialog) and
+        // call ended while backgrounded (CALL_ENDED event missed).
+        debugPrint('[CALL] Resume — checking if call is still active...');
         _wasBackgroundedDuringCall = false;
+        _pollForCallEnd();
       }
     }
+  }
+
+  /// Polls the device call log to detect when the call actually ends.
+  /// Runs every 3 seconds until the call is found in the log or timeout.
+  void _pollForCallEnd() {
+    int attempts = 0;
+    const maxAttempts = 20; // 60 seconds max
+
+    Timer.periodic(const Duration(seconds: 3), (timer) async {
+      attempts++;
+      if (!mounted || !callStarted) {
+        timer.cancel();
+        return;
+      }
+
+      final mobileNo = widget.data["mobile_no"]?.toString() ?? "";
+      if (mobileNo.isEmpty) {
+        timer.cancel();
+        callStarted = false;
+        if (mounted) _showCallCompletionDialog();
+        return;
+      }
+
+      final callInfo = await _fetchCallInfoWithRetry(mobileNo);
+      if (callInfo['found'] == true) {
+        // Call log entry found — call has ended
+        timer.cancel();
+        debugPrint('[CALL] Poll detected call ended after ${attempts * 3}s');
+        callDurationTimer?.cancel();
+        callStarted = false;
+        callStartTime = null;
+
+        final attended = callInfo['attended'] == true;
+        final durationSeconds = callInfo['durationSeconds'] is int
+            ? callInfo['durationSeconds'] as int
+            : int.tryParse(callInfo['durationSeconds']?.toString() ?? '0') ?? 0;
+
+        if (!attended && durationSeconds == 0) {
+          // Not answered
+          unawaited(CallHistoryStorage.add(CallHistoryEntry(
+            customerName: widget.data["customer_name"]?.toString() ?? '',
+            mobileNo: mobileNo,
+            doctype: widget.data["doctype"]?.toString() ?? '',
+            docname: widget.data["docname"]?.toString() ?? '',
+            status: 'Not Answered',
+            durationSeconds: 0,
+            calledAt: _initiatedAt ?? DateTime.now(),
+          )));
+          unawaited(CallLogApi.updateCallLog(
+            doctype: widget.data["doctype"]?.toString() ?? '',
+            docname: widget.data["docname"]?.toString() ?? '',
+            customerName: widget.data["customer_name"]?.toString() ?? '',
+            mobileNo: mobileNo,
+            initiatedTime: _initiatedAt ?? DateTime.now(),
+            callDuration: 0,
+            callStatus: callInfo['callStatus']?.toString() ?? 'Not Connected',
+            disconnectedStatus: callInfo['disconnectedStatus']?.toString() ?? 'not_connected',
+            attended: false,
+            notes: '',
+            dataSource: callInfo['dataSource']?.toString() ?? 'device',
+            permissionGranted: callInfo['permissionGranted'] == true,
+            retrievedAttempt: callInfo['retrievedAttempt'] is int
+                ? callInfo['retrievedAttempt'] as int
+                : -1,
+          ));
+          if (mounted) Navigator.pop(context, {'status': 'not_connected'});
+        } else {
+          // Answered — show completion dialog
+          if (mounted) {
+            _showCallCompletionDialog(
+              callDuration: Duration(seconds: durationSeconds),
+              callStatus: callInfo['callStatus']?.toString(),
+              disconnectedStatus: callInfo['disconnectedStatus']?.toString(),
+              attended: attended,
+              dataSource: callInfo['dataSource']?.toString() ?? 'device',
+              permissionGranted: callInfo['permissionGranted'] == true,
+              retrievedAttempt: callInfo['retrievedAttempt'] is int
+                  ? callInfo['retrievedAttempt'] as int
+                  : -1,
+            );
+          }
+        }
+      } else if (attempts >= maxAttempts) {
+        // Timeout — show manual completion dialog
+        timer.cancel();
+        debugPrint('[CALL] Poll timeout — showing manual dialog');
+        callStarted = false;
+        if (mounted) _showCallCompletionDialog();
+      }
+      // else: call still active — keep polling
+    });
   }
 
   Future<void> _handleResumeAfterCall() async {
