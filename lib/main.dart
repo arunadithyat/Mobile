@@ -207,10 +207,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     await getFcmToken();
     await _initializeNotifications();
     _listenForTokenRefresh();
-    await _loadPendingQueue();
-    await _drainBackgroundQueuedCalls();
     await _syncIncomingDeviceCalls();
-    // Opportunities are loaded manually via Pull-to-refresh only
+    // No queue load on app start — queue fills only from FCM triggers
   }
 
   /// Reads the device call log for incoming/missed calls since the last
@@ -246,78 +244,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
   }
 
-  /// Calls received via FCM while the app was in background/killed are
-  /// persisted by the background handler. Drain them into the queue here.
-  Future<void> _drainBackgroundQueuedCalls() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      // CRITICAL: the background isolate wrote to disk, but this isolate's
-      // SharedPreferences cache is stale — reload() re-reads from disk.
-      await prefs.reload();
-      final stored = prefs.getStringList('bg_pending_calls') ?? [];
-      debugPrint("[QUEUE][BG] Drain check — found ${stored.length} stored call(s)");
-      if (stored.isEmpty) return;
-      await prefs.remove('bg_pending_calls');
-      debugPrint("[QUEUE][BG] Draining ${stored.length} background call(s) into queue");
-      for (final s in stored) {
-        try {
-          final data = Map<String, dynamic>.from(jsonDecode(s) as Map);
-          await _enqueueLeadCall(data, reason: 'background_fcm');
-        } catch (e) {
-          debugPrint("[QUEUE][BG] Failed to parse stored call: $e");
-        }
-      }
-      if (mounted) setState(() {});
-    } catch (e) {
-      debugPrint("[QUEUE][BG] Drain error: $e");
-    }
-  }
-
-  Future<void> _requestCallTelemetryPermissions() async {
-    debugPrint("[PERM] 🔐 Requesting call telemetry permissions...");
-    
-    final phoneStatus = await Permission.phone.request();
-    debugPrint("[PERM] phone permission: $phoneStatus");
-    debugPrint("[PERM] phone permission granted: ${phoneStatus.isGranted ? '✅ YES' : '❌ NO'}");
-    
-    final callLogReady = await AutoDialer.ensureCallLogPermission();
-    debugPrint("[PERM] call log permission ready: $callLogReady");
-    debugPrint("[PERM] READ_CALL_LOG permission: ${callLogReady ? '✅ GRANTED' : '❌ DENIED/NOT_REQUESTED'}");
-    debugPrint("[PERM] ✅ Permission request cycle complete");
-  }
-
-  Future<void> _loadPendingQueue() async {
-    try {
-      debugPrint("[QUEUE][LOAD] Fetching call queue from API...");
-      final result = await CallQueueApi.getCallQueue();
-      if (!mounted) return;
-      
-      if (result['success'] == true) {
-        final queueItems = result['queue'] as List<dynamic>? ?? [];
-        setState(() {
-          callQueue.clearAll();
-          if (queueItems.isNotEmpty) {
-            for (final item in queueItems) {
-              if (item is CallQueueItem &&
-                  !callQueue.containsCall(item.docname, item.mobileNo)) {
-                callQueue.addItem(item);
-              }
-            }
-          }
-        });
-        debugPrint("[QUEUE][LOAD] ✅ Loaded queue from API - ${queueItems.length} items");
-      } else {
-        debugPrint("[QUEUE][LOAD] ❌ API error: ${result['message']}");
-      }
-    } catch (e) {
-      debugPrint("[QUEUE][LOAD] ❌ Failed to load queue from API: $e");
-    }
-  }
-
-  Future<void> _enqueueLeadCall(
-    Map<String, dynamic> normalized, {
-    required String reason,
-  }) async {
+) async {
     final docname = normalized['docname']?.toString() ?? '';
     final mobileNo = normalized['mobile_no']?.toString() ?? '';
 
@@ -334,6 +261,36 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       callQueue.addItem(item);
     });
     debugPrint("[QUEUE][FLOW] ✅ Added to queue - queue length=${callQueue.length}");
+  }
+
+  /// Fetches call queue from API and updates the display. NO auto-call.
+  /// Used by: swipe-down refresh, cancel recovery, busy-path refresh.
+  Future<void> _refreshQueueDisplay() async {
+    try {
+      debugPrint("[QUEUE] Refreshing display from API...");
+      final items = await CallQueueApi.fetchCallQueue();
+      if (!mounted) return;
+      setState(() {
+        callQueue.clearAll();
+        for (final item in items) {
+          callQueue.addItem(item);
+        }
+      });
+      debugPrint("[QUEUE] ✅ ${items.length} item(s) loaded");
+    } catch (e) {
+      debugPrint("[QUEUE] ❌ Refresh failed: $e");
+    }
+  }
+
+  /// Called ONLY on FCM foreground trigger — refreshes queue then
+  /// auto-calls the first pending call exactly once. No loop.
+  Future<void> _refreshAndAutoCallOnce() async {
+    await _refreshQueueDisplay();
+    if (!mounted) return;
+    if (callQueue.pendingCount > 0 && !_isLeadCallInProgress && !_processingLock) {
+      debugPrint("[QUEUE] FCM trigger — auto-calling first pending call");
+      _processFirstQueuedCall();
+    }
   }
 
   Future<void> _initializeNotifications() async {
@@ -491,10 +448,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // Queue all leads that won't be processed immediately — do this FIRST
     // so the queue badge appears before the first call screen opens.
     final queueStartIndex = processFirstImmediately ? 1 : 0;
-    for (int i = queueStartIndex; i < normalizedLeads.length; i++) {
-      await _enqueueLeadCall(normalizedLeads[i], reason: "batch_queued");
-      if (!mounted) return;
-    }
+    // Refresh queue from API — backend has all batch data
+    await _refreshAndAutoCallOnce();
+    if (!mounted) return;
 
     if (processFirstImmediately) {
       debugPrint("[BATCH] ✅ Processing first lead immediately");
@@ -512,8 +468,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
       // Re-queue the first lead if the user cancelled it
       if (routeResult is Map<String, dynamic> && routeResult['status'] == 'cancelled') {
-        debugPrint("[BATCH] ℹ️ First lead cancelled — re-queuing");
-        await _enqueueLeadCall(normalizedLeads[0], reason: "batch_first_cancelled");
+        debugPrint("[BATCH] ℹ️ First lead cancelled — refreshing queue");
+        await _refreshQueueDisplay();
       }
     }
 
@@ -580,16 +536,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
     // If already processing a call OR lock is held by another notification, queue immediately
     if (isCallFlowPaused || _isLeadCallInProgress || _processingLock) {
-      debugPrint("⏸️ Call flow busy. Adding to queue...");
-      final reason = isCallFlowPaused
-          ? "paused_flow"
-          : _processingLock
-              ? "processing_lock"
-              : "already_in_call";
-      await _enqueueLeadCall(normalized, reason: reason);
+      debugPrint("⏸️ Call flow busy — refreshing queue display only");
+      await _refreshQueueDisplay();
       if (!mounted) return;
       setState(() {
-        _lastPushAction = "queued_$reason";
+        _lastPushAction = "queued_busy";
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -603,31 +554,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       return;
     }
 
-    debugPrint("✅ Navigating to LeadCallScreen");
-    // Acquire lock immediately to prevent race condition
-    _processingLock = true;
+    debugPrint("✅ FCM trigger — refreshing queue and auto-calling once");
+    await _refreshAndAutoCallOnce();
     setState(() {
-      _isLeadCallInProgress = true;
-    });
-    final routeResult = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => LeadCallScreen(data: normalized),
-      ),
-    );
-    if (!mounted) return;
-    setState(() {
-      _isLeadCallInProgress = false;
-    });
-    _processingLock = false;
-    if (routeResult is Map<String, dynamic> && routeResult['status'] == 'cancelled') {
-      // Add back to queue as pending — user can process it later
-      await _enqueueLeadCall(normalized, reason: "manual_cancel");
-      if (!mounted) return;
-      debugPrint("[QUEUE] Call cancelled — re-queued as pending");
-    }
-    setState(() {
-      _lastPushAction = "navigated_to_lead_call_screen";
+      _lastPushAction = "fcm_auto_call";
     });
     debugPrint("========== END INCOMING LEAD CALL ==========");
   }
@@ -992,9 +922,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.resumed) {
-      // Pick up any calls that arrived while we were backgrounded
-      _drainBackgroundQueuedCalls();
       _syncIncomingDeviceCalls();
+      // No queue refresh or auto-call on resume
     }
   }
 
@@ -1482,8 +1411,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               ),
             ),
           Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(12),
+            child: RefreshIndicator(
+              onRefresh: _refreshQueueDisplay,
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.all(12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -1492,6 +1424,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   _buildCategorizedQueue(),
                 ],
               ),
+            ),
             ),
           ),
         ],
