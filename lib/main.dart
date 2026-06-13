@@ -866,29 +866,22 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     setState(() { _isLeadCallInProgress = false; });
     _processingLock = false;
 
-    // User cancelled (countdown or dialpad) — customer not ready right now.
-    // Move this call to the END of the queue and continue with the next one,
-    // so the team isn't stuck retrying the same customer.
+    // User cancelled — move to end of queue, STOP processing.
+    // Agent picks the next call manually when ready.
     if (result is Map<String, dynamic> && result['status'] == 'cancelled') {
-      debugPrint("[QUEUE] Cancelled — moved to end of queue, processing next");
+      debugPrint("[QUEUE] Cancelled — moved to end of queue, stopped");
       setState(() {
         callQueue.moveToEnd(targetIndex);
       });
-      if (callQueue.pendingCount > 1) {
-        _processFirstQueuedCall();
-      }
       return;
     }
 
-    // Not answered — same treatment: move to end, try the next customer
+    // Not answered — same: move to end, stop.
     if (result is Map<String, dynamic> && result['status'] == 'not_connected') {
-      debugPrint("[QUEUE] Not connected — moved to end of queue, processing next");
+      debugPrint("[QUEUE] Not connected — moved to end of queue, stopped");
       setState(() {
         callQueue.moveToEnd(targetIndex);
       });
-      if (callQueue.pendingCount > 1) {
-        _processFirstQueuedCall();
-      }
       return;
     }
 
@@ -898,10 +891,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     });
     debugPrint("[QUEUE] Call completed — removed from queue");
 
-    // Auto-process next pending call
-    if (callQueue.pendingCount > 0) {
-      _processFirstQueuedCall();
-    }
+    // Call completed — agent processes next call manually
   }
 
   Future<void> logout() async {
@@ -1497,11 +1487,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildScorecard(),
-                  const SizedBox(height: 12),
                   _buildKpiGrid(),
-                  const SizedBox(height: 10),
-                  _buildConversionCard(),
                   const SizedBox(height: 16),
                   _buildCategorizedQueue(),
                 ],
