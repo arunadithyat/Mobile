@@ -58,6 +58,25 @@ class CallHistoryStorage {
     try {
       final prefs = await SharedPreferences.getInstance();
       final list = prefs.getStringList(_key) ?? [];
+
+      // Dedup: skip if same mobile + timestamp (within 60s) already exists
+      final entryMs = entry.calledAt.millisecondsSinceEpoch;
+      for (final s in list) {
+        try {
+          final m = jsonDecode(s) as Map;
+          if (m['mobile_no'] == entry.mobileNo) {
+            final existingMs = DateTime.tryParse(m['called_at'] ?? '')
+                    ?.millisecondsSinceEpoch ??
+                0;
+            if ((entryMs - existingMs).abs() < 60000) {
+              debugPrint(
+                  '[HISTORY] Skipped duplicate: ${entry.customerName} / ${entry.mobileNo}');
+              return;
+            }
+          }
+        } catch (_) {}
+      }
+
       list.insert(0, jsonEncode(entry.toMap())); // newest first
       if (list.length > _maxEntries) {
         list.removeRange(_maxEntries, list.length);
