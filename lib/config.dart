@@ -15,8 +15,9 @@ class AppConfig {
   static const String pauseCallApi =
       "$baseUrl/api/method/itgenie.lead_calling.mobile_api.pause_call";
 
+  // READ-only endpoint — returns pending calls, no FCM, no side effects
   static const String callQueueApi =
-      "$baseUrl/api/method/callqueue";
+      "$baseUrl/api/method/get_pending_calls";
 
   // Receives device incoming-call entries; backend matches the number
   // against Lead/Opportunity and creates a Call Log when relevant.

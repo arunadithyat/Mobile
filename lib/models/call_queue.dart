@@ -1,6 +1,7 @@
 enum CallQueueStatus { pending, cancelled }
 
 class CallQueueItem {
+  final String callLogName; // Call Log document name (e.g. "CALL-0001") for post-call updates
   final String doctype;
   final String docname;
   final String customerName;
@@ -11,6 +12,7 @@ class CallQueueItem {
   CallQueueStatus status;
 
   CallQueueItem({
+    this.callLogName = '',
     required this.doctype,
     required this.docname,
     required this.customerName,
@@ -27,6 +29,7 @@ class CallQueueItem {
   Map<String, dynamic> toMap() {
     return {
       'type': 'NEW_LEAD_CALL',
+      'call_log_name': callLogName,
       'doctype': doctype,
       'docname': docname,
       'customer_name': customerName,
@@ -38,30 +41,47 @@ class CallQueueItem {
     };
   }
 
+  /// Handles both FCM payload format and API (get_pending_calls) format:
+  ///   FCM:  { doctype, docname, customer_name, mobile_no }
+  ///   API:  { name, reference_doctype, reference_docname, customer_name, mobile_no, creation }
   factory CallQueueItem.fromMap(Map<String, dynamic> data) {
+    final doctype = (data['doctype'] ?? data['reference_doctype'] ?? '').toString();
+    final docname = (data['docname'] ?? data['reference_docname'] ?? '').toString();
+
     return CallQueueItem(
-      doctype: data['doctype'] ?? '',
-      docname: data['docname'] ?? '',
+      callLogName: (data['name'] ?? data['call_log_name'] ?? '').toString(),
+      doctype: doctype,
+      docname: docname,
       customerName: data['customer_name'] ?? '',
       mobileNo: data['mobile_no'] ?? '',
-      queuedAt: data['queued_at'] != null
-          ? DateTime.parse(data['queued_at'])
-          : DateTime.now(),
+      queuedAt: _parseDateTime(data),
       autoCall: data['auto_call'] ?? '1',
+      category: _resolveCategory(data, doctype),
       status: data['status'] == 'cancelled'
           ? CallQueueStatus.cancelled
           : CallQueueStatus.pending,
     );
   }
 
+  static DateTime _parseDateTime(Map<String, dynamic> data) {
+    for (final key in ['queued_at', 'creation']) {
+      final v = data[key]?.toString();
+      if (v != null && v.isNotEmpty) {
+        final dt = DateTime.tryParse(v);
+        if (dt != null) return dt;
+      }
+    }
+    return DateTime.now();
+  }
+
   String get formattedTime => queuedAt.toString().split('.')[0];
 
   /// Category from payload, else derived from doctype.
-  static String _resolveCategory(Map<String, dynamic> data) {
+  static String _resolveCategory(Map<String, dynamic> data, String doctype) {
     final explicit =
         (data['category'] ?? data['lead_category'] ?? '').toString().trim();
     if (explicit.isNotEmpty) return explicit;
-    switch ((data['doctype'] ?? '').toString()) {
+    switch (doctype) {
       case 'Lead':
         return 'Hot Leads';
       case 'Opportunity':
