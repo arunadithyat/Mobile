@@ -257,23 +257,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     debugPrint("[PERM] ✅ Permission request cycle complete");
   }
 
-  /// Adds a call directly to the local queue from FCM payload data.
-  /// Deduplicates by docname + mobile_no.
-  void _addToLocalQueue(Map<String, dynamic> data) {
-    final docname = data['docname']?.toString() ?? '';
-    final mobileNo = data['mobile_no']?.toString() ?? '';
-    if (docname.isEmpty || mobileNo.isEmpty) return;
-    if (callQueue.containsCall(docname, mobileNo)) {
-      debugPrint("[QUEUE] Skipped duplicate: $docname / $mobileNo");
-      return;
-    }
-    final item = CallQueueItem.fromMap(data);
-    setState(() {
-      callQueue.addItem(item);
-    });
-    debugPrint("[QUEUE] ✅ Added from FCM: ${data['customer_name']} / $mobileNo");
-  }
-
   /// Fetches call queue from API and updates the display. NO auto-call.
   /// Used by: swipe-down refresh, cancel recovery, busy-path refresh.
   Future<void> _refreshQueueDisplay() async {
@@ -456,10 +439,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
     final processFirstImmediately = !isCallFlowPaused && !_isLeadCallInProgress;
 
-    // Add all leads to local queue directly from FCM payload
-    for (int i = 0; i < normalizedLeads.length; i++) {
-      _addToLocalQueue(normalizedLeads[i]);
-    }
+    // Refresh queue from API — backend already created Call Logs for all leads
+    await _refreshQueueDisplay();
     if (!mounted) return;
 
     if (processFirstImmediately) {
@@ -478,7 +459,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
       // Re-queue the first lead if the user cancelled it
       if (routeResult is Map<String, dynamic> && routeResult['status'] == 'cancelled') {
-        debugPrint("[BATCH] ℹ️ First lead cancelled — stays in queue");
+        debugPrint("[BATCH] ℹ️ First lead cancelled — refreshing queue");
+        await _refreshQueueDisplay();
       }
     }
 
@@ -543,10 +525,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       return;
     }
 
-    // If already processing a call OR lock is held, add to local queue directly
+    // If already processing a call OR lock is held, refresh queue from API
+    // (Call Log already exists in backend since it's created before FCM)
     if (isCallFlowPaused || _isLeadCallInProgress || _processingLock) {
-      debugPrint("⏸️ Call flow busy — adding to local queue");
-      _addToLocalQueue(normalized);
+      debugPrint("⏸️ Call flow busy — refreshing queue from API");
+      await _refreshQueueDisplay();
       if (!mounted) return;
       setState(() {
         _lastPushAction = "queued_busy";
@@ -563,12 +546,25 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       return;
     }
 
-    debugPrint("✅ FCM trigger — adding to queue and auto-calling");
-    _addToLocalQueue(normalized);
+    debugPrint("✅ FCM trigger — showing Incoming Lead and auto-calling");
+    // Show Incoming Lead screen directly with FCM payload data
+    _processingLock = true;
+    setState(() { _isLeadCallInProgress = true; });
+
+    final routeResult = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LeadCallScreen(data: normalized),
+      ),
+    );
+
     if (!mounted) return;
-    if (callQueue.pendingCount > 0 && !_isLeadCallInProgress && !_processingLock) {
-      _processFirstQueuedCall();
-    }
+    setState(() { _isLeadCallInProgress = false; });
+    _processingLock = false;
+
+    // Refresh queue from API after call ends — shows remaining pending calls
+    await _refreshQueueDisplay();
+
     setState(() {
       _lastPushAction = "fcm_auto_call";
     });
