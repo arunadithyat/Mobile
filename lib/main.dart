@@ -207,8 +207,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     await getFcmToken();
     await _initializeNotifications();
     _listenForTokenRefresh();
+    await _refreshQueueDisplay();
     await _syncIncomingDeviceCalls();
-    // No queue load on app start — queue fills only from FCM triggers
   }
 
   /// Reads the device call log for incoming/missed calls since the last
