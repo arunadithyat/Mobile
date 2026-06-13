@@ -2017,13 +2017,18 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
   Widget build(BuildContext context) {
     return WillPopScope(
       onWillPop: () async {
+        if (callStarted) {
+          // Block back navigation during active call — post-call dialog needs this screen
+          debugPrint('[CALL] Back blocked — call is active');
+          return false;
+        }
         timer?.cancel();
         return true;
       },
       child: Scaffold(
         appBar: AppBar(
           title: const Text("Incoming Call"),
-          automaticallyImplyLeading: false,
+          automaticallyImplyLeading: !callStarted, // hide back arrow during call
         ),
         body: Center(
           child: Column(
