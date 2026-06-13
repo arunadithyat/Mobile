@@ -2061,20 +2061,22 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
                 ),
               const SizedBox(height: 40),
               ElevatedButton(
-                onPressed: () {
-                  // Cancel button — always go back to queue as pending
-                  timer?.cancel();
-                  callDurationTimer?.cancel();
-                  _callStateSubscription?.cancel();
-                  callStarted = false;
-                  Navigator.pop(context, {'status': 'cancelled'});
-                },
+                // Disabled during active call — post-call dialog handles the rest
+                onPressed: callStarted
+                    ? null
+                    : () {
+                        timer?.cancel();
+                        callDurationTimer?.cancel();
+                        _callStateSubscription?.cancel();
+                        callStarted = false;
+                        Navigator.pop(context, {'status': 'cancelled'});
+                      },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red,
+                  backgroundColor: callStarted ? Colors.grey : Colors.red,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 16),
                 ),
-                child: const Text("Cancel"),
+                child: Text(callStarted ? "On Call..." : "Cancel"),
               ),
             ],
           ),
