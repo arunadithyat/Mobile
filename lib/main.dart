@@ -244,23 +244,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
   }
 
-) async {
-    final docname = normalized['docname']?.toString() ?? '';
-    final mobileNo = normalized['mobile_no']?.toString() ?? '';
-
-    // Duplicate guard — same doc + number must not be queued twice
-    if (callQueue.containsCall(docname, mobileNo)) {
-      debugPrint(
-          "[QUEUE][FLOW] ⏭️ Skipped duplicate ($reason) — $docname / $mobileNo already in queue");
-      return;
-    }
-
-    debugPrint("[QUEUE][FLOW] Adding to in-memory queue - reason=$reason");
-    final item = CallQueueItem.fromMap(normalized);
-    setState(() {
-      callQueue.addItem(item);
-    });
-    debugPrint("[QUEUE][FLOW] ✅ Added to queue - queue length=${callQueue.length}");
+  Future<void> _requestCallTelemetryPermissions() async {
+    debugPrint("[PERM] 🔐 Requesting call telemetry permissions...");
+    
+    final phoneStatus = await Permission.phone.request();
+    debugPrint("[PERM] phone permission: $phoneStatus");
+    debugPrint("[PERM] phone permission granted: ${phoneStatus.isGranted ? '✅ YES' : '❌ NO'}");
+    
+    final callLogReady = await AutoDialer.ensureCallLogPermission();
+    debugPrint("[PERM] call log permission ready: $callLogReady");
+    debugPrint("[PERM] READ_CALL_LOG permission: ${callLogReady ? '✅ GRANTED' : '❌ DENIED/NOT_REQUESTED'}");
+    debugPrint("[PERM] ✅ Permission request cycle complete");
   }
 
   /// Fetches call queue from API and updates the display. NO auto-call.
