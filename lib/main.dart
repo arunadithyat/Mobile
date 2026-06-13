@@ -1197,14 +1197,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     children: [
                       Text("$count",
                           style: TextStyle(
-                              fontSize: 20,
+                              fontSize: 22,
                               fontWeight: FontWeight.bold,
                               color: color)),
                       Text(cat,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                              fontSize: 11, color: Colors.grey[700])),
+                              fontSize: 13, color: Colors.grey[700])),
                     ],
                   ),
                 ),
@@ -1329,7 +1329,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           children: [
             Text("Call Queue (${all.length})",
                 style: const TextStyle(
-                    fontSize: 15, fontWeight: FontWeight.bold)),
+                    fontSize: 17, fontWeight: FontWeight.bold)),
             ElevatedButton.icon(
               onPressed: _processFirstQueuedCall,
               icon: const Icon(Icons.phone, size: 18),
@@ -1354,7 +1354,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   children: [
                     Text(cat,
                         style: TextStyle(
-                            fontSize: 13,
+                            fontSize: 15,
                             fontWeight: FontWeight.bold,
                             color: Colors.grey[800])),
                     const SizedBox(width: 6),
@@ -1367,7 +1367,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       ),
                       child: Text("${items.length}",
                           style: TextStyle(
-                              fontSize: 11,
+                              fontSize: 13,
                               fontWeight: FontWeight.bold,
                               color: Colors.orange.shade800)),
                     ),
@@ -1381,10 +1381,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   child: Row(
                     children: [
                       SizedBox(
-                        width: 24,
+                        width: 28,
                         child: Text("${entry.key + 1}.",
                             style: TextStyle(
-                                fontSize: 13,
+                                fontSize: 15,
                                 fontWeight: FontWeight.bold,
                                 color: Colors.orange.shade800)),
                       ),
@@ -1393,12 +1393,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                                fontSize: 13,
+                                fontSize: 15,
                                 fontWeight: FontWeight.w600)),
                       ),
                       Text(call.mobileNo,
                           style: TextStyle(
-                              fontSize: 12, color: Colors.grey[700])),
+                              fontSize: 14, color: Colors.grey[700])),
                       IconButton(
                         visualDensity: VisualDensity.compact,
                         icon: const Icon(Icons.call,
