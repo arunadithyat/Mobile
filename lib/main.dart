@@ -85,8 +85,16 @@ class _LoginPageState extends State<LoginPage> {
   final passController = TextEditingController();
 
   bool loading = false;
+  bool _obscurePassword = true;
 
   Future<void> login() async {
+    if (userController.text.trim().isEmpty || passController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please enter username and password")),
+      );
+      return;
+    }
+
     setState(() => loading = true);
 
     final result = await LoginApi.login(
@@ -120,41 +128,164 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Homegenie Call App"),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            const SizedBox(height: 50),
-            TextField(
-              controller: userController,
-              decoration: const InputDecoration(
-                labelText: "Username",
-                border: OutlineInputBorder(),
+      backgroundColor: Colors.white,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 28),
+          child: Column(
+            children: [
+              const SizedBox(height: 60),
+
+              // Logo
+              ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: Image.asset(
+                  'assets/images/salesgenie_logo.jpeg',
+                  height: 180,
+                  width: 180,
+                  fit: BoxFit.cover,
+                ),
               ),
-            ),
-            const SizedBox(height: 20),
-            TextField(
-              controller: passController,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: "Password",
-                border: OutlineInputBorder(),
+
+              const SizedBox(height: 20),
+
+              // App name
+              const Text(
+                "SalesGenie",
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1A73E8),
+                  letterSpacing: 1.2,
+                ),
               ),
-            ),
-            const SizedBox(height: 30),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: loading ? null : login,
-                child: loading
-                    ? const CircularProgressIndicator()
-                    : const Text("LOGIN"),
+              const SizedBox(height: 6),
+              Text(
+                "Collaborate. Sell More.",
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey[500],
+                  letterSpacing: 0.5,
+                ),
               ),
-            ),
-          ],
+
+              const SizedBox(height: 50),
+
+              // Username field
+              TextField(
+                controller: userController,
+                keyboardType: TextInputType.emailAddress,
+                textInputAction: TextInputAction.next,
+                decoration: InputDecoration(
+                  labelText: "Username",
+                  hintText: "Enter your email or username",
+                  prefixIcon: const Icon(Icons.person_outline, color: Color(0xFF1A73E8)),
+                  filled: true,
+                  fillColor: Colors.grey[50],
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.grey[300]!),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.grey[300]!),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFF1A73E8), width: 2),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 18),
+
+              // Password field with eye icon
+              TextField(
+                controller: passController,
+                obscureText: _obscurePassword,
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => login(),
+                decoration: InputDecoration(
+                  labelText: "Password",
+                  hintText: "Enter your password",
+                  prefixIcon: const Icon(Icons.lock_outline, color: Color(0xFF1A73E8)),
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                      color: Colors.grey[600],
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _obscurePassword = !_obscurePassword;
+                      });
+                    },
+                  ),
+                  filled: true,
+                  fillColor: Colors.grey[50],
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.grey[300]!),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.grey[300]!),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFF1A73E8), width: 2),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 32),
+
+              // Login button
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton(
+                  onPressed: loading ? null : login,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF1A73E8),
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: const Color(0xFF1A73E8).withValues(alpha: 0.6),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 2,
+                  ),
+                  child: loading
+                      ? const SizedBox(
+                          height: 22,
+                          width: 22,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text(
+                          "LOGIN",
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 1.5,
+                          ),
+                        ),
+                ),
+              ),
+
+              const SizedBox(height: 40),
+
+              // Footer
+              Text(
+                "One Stop Many Solutions",
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[400],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
