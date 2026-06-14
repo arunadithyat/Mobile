@@ -847,10 +847,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             callQueue.remove(selectedIndex);
           });
 
-          // Auto-process next pending call
-          if (callQueue.pendingCount > 0) {
-            _processFirstQueuedCall();
-          }
+          // Call completed — user processes next call manually
         }
       }
     });
@@ -890,11 +887,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Call flow resumed")),
       );
-      
-      // Auto-process next pending call directly without showing dialog
-      if (callQueue.pendingCount > 0) {
-        _processFirstQueuedCall();
-      }
     } else {
       // Pause call flow with a reason — stays paused until manual resume
       final reason = await _selectPauseReason();
