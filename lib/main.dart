@@ -23,6 +23,7 @@ import 'services/notification_service.dart';
 import 'models/call_queue.dart';
 import 'services/call_history_storage.dart';
 import 'screens/call_history_tab.dart';
+import 'screens/chatbot_screen.dart';
 import 'services/message_service.dart';
 
 /// Launches the phone dialer to call the given phone number
@@ -1548,6 +1549,24 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
+  void _openChatbot() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChatbotScreen(
+          onNavigate: (route) {
+            Navigator.pop(context); // close chatbot
+            if (route == 'history') {
+              setState(() => _currentTab = 1);
+            } else if (route == 'queue') {
+              setState(() => _currentTab = 0);
+            }
+          },
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1562,6 +1581,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ],
       ),
       drawer: _buildDrawer(),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _openChatbot,
+        backgroundColor: const Color(0xFF1A73E8),
+        child: const Icon(Icons.chat, color: Colors.white),
+      ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentTab,
         onTap: (i) => setState(() => _currentTab = i),
