@@ -52,7 +52,7 @@ class _CallCompletionDialogState extends State<CallCompletionDialog> {
     _disconnectedStatus =
         widget.initialDisconnectedStatus ?? "remote_or_normal_hangup";
     _disconnectedController = TextEditingController(text: _disconnectedStatus);
-
+  }
 
   final List<String> _statusOptions = [
     "Connected",
