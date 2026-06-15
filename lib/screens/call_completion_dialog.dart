@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:lead_calling/api/call_log_api.dart';
-import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 class CallCompletionDialog extends StatefulWidget {
   final String doctype;
@@ -43,10 +42,7 @@ class _CallCompletionDialogState extends State<CallCompletionDialog> {
   String _notes = "";
   bool _isSubmitting = false;
   late final TextEditingController _disconnectedController;
-  late final TextEditingController _notesController;
-  final stt.SpeechToText _speech = stt.SpeechToText();
-  bool _isListening = false;
-  bool _speechAvailable = false;
+
 
   @override
   void initState() {
@@ -56,60 +52,7 @@ class _CallCompletionDialogState extends State<CallCompletionDialog> {
     _disconnectedStatus =
         widget.initialDisconnectedStatus ?? "remote_or_normal_hangup";
     _disconnectedController = TextEditingController(text: _disconnectedStatus);
-    _notesController = TextEditingController();
-    _initSpeech();
-  }
 
-  Future<void> _initSpeech() async {
-    _speechAvailable = await _speech.initialize(
-      onStatus: (status) {
-        if (status == 'done' || status == 'notListening') {
-          if (mounted) setState(() => _isListening = false);
-        }
-      },
-      onError: (error) {
-        debugPrint('[VOICE] Error: $error');
-        if (mounted) setState(() => _isListening = false);
-      },
-    );
-    debugPrint('[VOICE] Speech available: $_speechAvailable');
-  }
-
-  void _toggleListening() async {
-    if (_isListening) {
-      await _speech.stop();
-      setState(() => _isListening = false);
-    } else {
-      if (!_speechAvailable) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Voice input not available on this device")),
-        );
-        return;
-      }
-      setState(() => _isListening = true);
-      await _speech.listen(
-        onResult: (result) {
-          setState(() {
-            // Append recognized words to existing notes
-            final current = _notesController.text;
-            if (current.isEmpty) {
-              _notesController.text = result.recognizedWords;
-            } else {
-              _notesController.text = '$current ${result.recognizedWords}';
-            }
-            _notes = _notesController.text;
-            // Move cursor to end
-            _notesController.selection = TextSelection.fromPosition(
-              TextPosition(offset: _notesController.text.length),
-            );
-          });
-        },
-        listenFor: const Duration(seconds: 30),
-        pauseFor: const Duration(seconds: 3),
-        localeId: 'en_IN', // Indian English
-      );
-    }
-  }
 
   final List<String> _statusOptions = [
     "Connected",
@@ -258,81 +201,27 @@ class _CallCompletionDialogState extends State<CallCompletionDialog> {
                 ),
                 const SizedBox(height: 15),
 
-                // Notes field with voice input
+                // Notes field
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          "Notes (Optional)",
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        GestureDetector(
-                          onTap: _toggleListening,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: _isListening
-                                  ? Colors.red.shade50
-                                  : Colors.blue.shade50,
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: _isListening
-                                    ? Colors.red.shade300
-                                    : Colors.blue.shade300,
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  _isListening ? Icons.mic : Icons.mic_none,
-                                  size: 18,
-                                  color: _isListening ? Colors.red : Colors.blue,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  _isListening ? "Listening..." : "Voice",
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w500,
-                                    color: _isListening ? Colors.red : Colors.blue,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
+                    const Text(
+                      "Notes (Optional)",
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     TextField(
-                      controller: _notesController,
                       onChanged: (value) {
                         _notes = value;
                       },
                       maxLines: 3,
                       decoration: InputDecoration(
-                        hintText: _isListening
-                            ? "Speak now..."
-                            : "Add notes or tap Voice to speak...",
+                        hintText: "Add any notes about the call...",
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
-                          borderSide: BorderSide(
-                            color: _isListening ? Colors.red : Colors.grey,
-                          ),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: BorderSide(
-                            color: _isListening ? Colors.red : Colors.blue,
-                            width: 2,
-                          ),
                         ),
                       ),
                     ),
@@ -380,9 +269,7 @@ class _CallCompletionDialogState extends State<CallCompletionDialog> {
 
   @override
   void dispose() {
-    _speech.stop();
     _disconnectedController.dispose();
-    _notesController.dispose();
     super.dispose();
   }
 
