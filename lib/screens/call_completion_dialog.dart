@@ -302,6 +302,15 @@ class _CallCompletionDialogState extends State<CallCompletionDialog> {
 
       debugPrint("[COMPLETION] Result: $result");
 
+      // Post to actual Call Log doctype (separate from Error Log)
+      final callLogResult = await CallLogDoctypeApi.updateCallLog(
+        mobileNo: widget.mobileNo,
+        startTime: widget.initiatedTime,
+        durationSeconds: widget.callDuration.inSeconds,
+        status: _callStatus,
+      );
+      debugPrint("[COMPLETION] Call Log doctype result: $callLogResult");
+
       if (mounted) {
         if (result['success'] == true) {
           ScaffoldMessenger.of(context).showSnackBar(

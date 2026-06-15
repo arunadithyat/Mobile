@@ -24,6 +24,10 @@ class AppConfig {
   static const String syncIncomingCallsApi =
       "$baseUrl/api/method/itgenie.lead_calling.mobile_api.sync_incoming_calls";
 
+  // Post-call: update the actual Call Log doctype in ERPNext
+  static const String updateCallLogApi =
+      "$baseUrl/api/resource/Call Log";
+
   // Fix #9: Pause interval options moved to config
   static const List<int> pauseIntervalOptions = [5, 15, 30];
 

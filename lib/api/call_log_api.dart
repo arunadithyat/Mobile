@@ -294,3 +294,79 @@ class IncomingCallSyncApi {
     }
   }
 }
+
+/// Posts call data to the actual Call Log doctype in ERPNext.
+/// This is separate from the Error Log posting (which stays as-is).
+class CallLogDoctypeApi {
+  static Future<Map<String, dynamic>> updateCallLog({
+    required String mobileNo,
+    required DateTime startTime,
+    required int durationSeconds,
+    required String status,
+    String? callLogName, // if updating existing record
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cookie = prefs.getString('cookie') ?? '';
+      if (cookie.isEmpty) {
+        return {'success': false, 'message': 'No session'};
+      }
+
+      final data = {
+        'to': mobileNo,
+        'start_time': startTime.toIso8601String(),
+        'duration': durationSeconds,
+        'status': status,
+      };
+
+      debugPrint('[CALL_LOG_DOCTYPE] Posting to Call Log doctype...');
+      debugPrint('[CALL_LOG_DOCTYPE] to: $mobileNo');
+      debugPrint('[CALL_LOG_DOCTYPE] start_time: ${startTime.toIso8601String()}');
+      debugPrint('[CALL_LOG_DOCTYPE] duration: $durationSeconds');
+      debugPrint('[CALL_LOG_DOCTYPE] status: $status');
+
+      String url;
+      http.Response response;
+
+      if (callLogName != null && callLogName.isNotEmpty) {
+        // Update existing Call Log record
+        url = '${AppConfig.updateCallLogApi}/$callLogName';
+        response = await http.put(
+          Uri.parse(url),
+          headers: {
+            'Content-Type': 'application/json',
+            'Cookie': cookie,
+          },
+          body: jsonEncode(data),
+        ).timeout(const Duration(seconds: 10));
+      } else {
+        // Create new Call Log record
+        url = AppConfig.updateCallLogApi;
+        response = await http.post(
+          Uri.parse(url),
+          headers: {
+            'Content-Type': 'application/json',
+            'Cookie': cookie,
+          },
+          body: jsonEncode(data),
+        ).timeout(const Duration(seconds: 10));
+      }
+
+      debugPrint('[CALL_LOG_DOCTYPE] Response: ${response.statusCode}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        debugPrint('[CALL_LOG_DOCTYPE] ✅ Call Log updated successfully');
+        return {'success': true, 'message': 'Call Log updated'};
+      }
+
+      debugPrint('[CALL_LOG_DOCTYPE] ❌ HTTP ${response.statusCode}: ${response.body}');
+      return {
+        'success': false,
+        'message': 'Failed (${response.statusCode})',
+      };
+    } catch (e) {
+      debugPrint('[CALL_LOG_DOCTYPE] ❌ Error: $e');
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+}
