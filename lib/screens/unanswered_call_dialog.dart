@@ -67,14 +67,27 @@ class _UnansweredCallDialogState extends State<UnansweredCallDialog> {
           ? '[$_rnrReason] ${comments.isEmpty ? "Call not connected" : comments}'
           : '[Junk] ${comments.isEmpty ? "Marked as junk" : comments}';
 
-      final result = await CallLogApi.updateLeadRnr(
-        leadName: widget.leadName,
-        status: _status,
-        followUpDate: _status == 'RNR'
-            ? _followUpDate!.toIso8601String().split('T')[0]
-            : DateTime.now().toIso8601String().split('T')[0],
-        comments: fullComment,
-      );
+      Map<String, dynamic> result;
+      if (widget.isOpportunity) {
+        result = await OpportunityApi.updateOpportunity(
+          oppName: widget.opportunityName,
+          fields: {
+            'status': _status,
+            if (_followUpDate != null)
+              'custom_next_followup_date1': _followUpDate!.toIso8601String().split('T')[0],
+            'comments': fullComment,
+          },
+        );
+      } else {
+        result = await CallLogApi.updateLeadRnr(
+          leadName: widget.leadName,
+          status: _status,
+          followUpDate: _status == 'RNR'
+              ? _followUpDate!.toIso8601String().split('T')[0]
+              : DateTime.now().toIso8601String().split('T')[0],
+          comments: fullComment,
+        );
+      }
 
       if (!mounted) return;
 
