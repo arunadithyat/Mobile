@@ -5,12 +5,16 @@ import '../api/lead_api.dart';
 
 class UnansweredCallDialog extends StatefulWidget {
   final String leadName;
+  final String opportunityName;
   final String customerName;
   final String mobileNo;
 
+  bool get isOpportunity => opportunityName.isNotEmpty && leadName.isEmpty;
+
   const UnansweredCallDialog({
     super.key,
-    required this.leadName,
+    this.leadName = '',
+    this.opportunityName = '',
     required this.customerName,
     required this.mobileNo,
   });
