@@ -351,44 +351,12 @@ class CallLogDoctypeApi {
         return {'success': true};
       }
 
-      // Log error to Error Log
-      final errorMsg = 'Incoming Call Log creation failed: HTTP ${response.statusCode} — ${response.body}';
-      debugPrint('[INCOMING_CALLLOG] ❌ $errorMsg');
-      await _logErrorToErrorLog(cookie, errorMsg, data);
+      debugPrint('[INCOMING_CALLLOG] ❌ HTTP ${response.statusCode}');
       return {'success': false, 'message': 'Failed (${response.statusCode})'};
     } catch (e) {
       debugPrint('[INCOMING_CALLLOG] ❌ Error: $e');
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        final cookie = prefs.getString('cookie') ?? '';
-        await _logErrorToErrorLog(cookie, 'Incoming Call Log error: $e', {
-          'from_number': fromNumber,
-          'duration': durationSeconds,
-        });
-      } catch (_) {}
       return {'success': false, 'message': e.toString()};
     }
-  }
-
-  /// Logs errors to ERPNext Error Log for debugging
-  static Future<void> _logErrorToErrorLog(
-    String cookie,
-    String errorMessage,
-    Map<String, dynamic> context,
-  ) async {
-    try {
-      await http.post(
-        Uri.parse('${AppConfig.baseUrl}/api/resource/Error%20Log'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Cookie': cookie,
-        },
-        body: jsonEncode({
-          'title': 'Incoming Call Log Error',
-          'error': '$errorMessage\n\nContext: ${jsonEncode(context)}',
-        }),
-      ).timeout(const Duration(seconds: 5));
-    } catch (_) {}
   }
 
   /// Updates the Call Log record in ERPNext.
