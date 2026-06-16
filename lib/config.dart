@@ -28,6 +28,10 @@ class AppConfig {
   static const String updateCallLogApi =
       "$baseUrl/api/resource/Call%20Log";
 
+  // Create incoming Call Log via custom server script
+  static const String createIncomingCallLogApi =
+      "$baseUrl/api/method/calllog";
+
   // Fix #9: Pause interval options moved to config
   static const List<int> pauseIntervalOptions = [5, 15, 30];
 

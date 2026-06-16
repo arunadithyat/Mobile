@@ -306,6 +306,7 @@ class IncomingCallSyncApi {
 /// This is separate from the Error Log posting (which stays as-is).
 class CallLogDoctypeApi {
   /// Creates a Call Log record for an incoming call from a queued customer.
+  /// Uses custom server script endpoint with ignore flags.
   static Future<Map<String, dynamic>> createIncomingCallLog({
     required String fromNumber,
     required String toNumber,
@@ -323,23 +324,21 @@ class CallLogDoctypeApi {
       final erpStatus = attended ? 'Completed' : 'No Answer';
       final endTime = startTime.add(Duration(seconds: durationSeconds));
 
-      final data = <String, dynamic>{
-        'from': fromNumber,
-        'type': 'Incoming',
+      // Field names match the server script's frappe.form_dict keys
+      final data = {
+        'from_number': fromNumber,
+        'to_number': toNumber,
         'start_time': startTime.toIso8601String(),
         'end_time': endTime.toIso8601String(),
         'duration': durationSeconds,
         'status': erpStatus,
       };
-      if (toNumber.isNotEmpty) {
-        data['to'] = toNumber;
-      }
 
-      debugPrint('[CALL_LOG_DOCTYPE] POST incoming: from=$fromNumber | status=$erpStatus | duration=$durationSeconds');
+      debugPrint('[INCOMING_CALLLOG] POST ${AppConfig.createIncomingCallLogApi}');
+      debugPrint('[INCOMING_CALLLOG] from=$fromNumber | to=$toNumber | status=$erpStatus | duration=$durationSeconds');
 
-      final url = '${AppConfig.updateCallLogApi}?ignore_mandatory=1&ignore_links=1&ignore_permissions=1';
       final response = await http.post(
-        Uri.parse(url),
+        Uri.parse(AppConfig.createIncomingCallLogApi),
         headers: {
           'Content-Type': 'application/json',
           'Cookie': cookie,
@@ -348,16 +347,48 @@ class CallLogDoctypeApi {
       ).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        debugPrint('[CALL_LOG_DOCTYPE] ✅ Incoming Call Log created');
+        debugPrint('[INCOMING_CALLLOG] ✅ Incoming Call Log created');
         return {'success': true};
       }
 
-      debugPrint('[CALL_LOG_DOCTYPE] ❌ HTTP ${response.statusCode}: ${response.body}');
+      // Log error to Error Log
+      final errorMsg = 'Incoming Call Log creation failed: HTTP ${response.statusCode} — ${response.body}';
+      debugPrint('[INCOMING_CALLLOG] ❌ $errorMsg');
+      await _logErrorToErrorLog(cookie, errorMsg, data);
       return {'success': false, 'message': 'Failed (${response.statusCode})'};
     } catch (e) {
-      debugPrint('[CALL_LOG_DOCTYPE] ❌ Error: $e');
+      debugPrint('[INCOMING_CALLLOG] ❌ Error: $e');
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final cookie = prefs.getString('cookie') ?? '';
+        await _logErrorToErrorLog(cookie, 'Incoming Call Log error: $e', {
+          'from_number': fromNumber,
+          'duration': durationSeconds,
+        });
+      } catch (_) {}
       return {'success': false, 'message': e.toString()};
     }
+  }
+
+  /// Logs errors to ERPNext Error Log for debugging
+  static Future<void> _logErrorToErrorLog(
+    String cookie,
+    String errorMessage,
+    Map<String, dynamic> context,
+  ) async {
+    try {
+      await http.post(
+        Uri.parse('${AppConfig.baseUrl}/api/resource/Error%20Log'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Cookie': cookie,
+        },
+        body: jsonEncode({
+          'title': 'Incoming Call Log Error',
+          'error': '$errorMessage\n\nContext: ${jsonEncode(context)}',
+        }),
+      ).timeout(const Duration(seconds: 5));
+    } catch (_) {}
   }
 
   /// Updates the Call Log record in ERPNext.
