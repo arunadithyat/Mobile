@@ -52,6 +52,10 @@ class AppConfig {
   static const String updateLeadRnrApi =
       "$baseUrl/api/method/update_lead_rnr_followup";
 
+  // Update Opportunity status (RNR/Junk) after unanswered call
+  static const String updateOpportunityRnrApi =
+      "$baseUrl/api/method/update_opportunity_rnr";
+
   // Fix #9: Pause interval options moved to config
   static const List<int> pauseIntervalOptions = [5, 15, 30];
 

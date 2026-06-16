@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../api/call_log_api.dart';
-import '../api/lead_api.dart';
 
 class UnansweredCallDialog extends StatefulWidget {
   final String leadName;
@@ -69,14 +68,13 @@ class _UnansweredCallDialogState extends State<UnansweredCallDialog> {
 
       Map<String, dynamic> result;
       if (widget.isOpportunity) {
-        result = await OpportunityApi.updateOpportunity(
-          oppName: widget.opportunityName,
-          fields: {
-            'status': _status,
-            if (_followUpDate != null)
-              'custom_next_followup_date1': _followUpDate!.toIso8601String().split('T')[0],
-            'comments': fullComment,
-          },
+        result = await CallLogApi.updateOpportunityRnr(
+          opportunityName: widget.opportunityName,
+          status: _status,
+          followUpDate: _status == 'RNR'
+              ? _followUpDate!.toIso8601String().split('T')[0]
+              : DateTime.now().toIso8601String().split('T')[0],
+          comments: fullComment,
         );
       } else {
         result = await CallLogApi.updateLeadRnr(

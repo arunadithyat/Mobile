@@ -290,6 +290,50 @@ class CallLogApi {
     }
   }
 
+  /// Updates Opportunity status after unanswered call (RNR/Junk)
+  static Future<Map<String, dynamic>> updateOpportunityRnr({
+    required String opportunityName,
+    required String status,
+    required String followUpDate,
+    String comments = '',
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cookie = prefs.getString('cookie') ?? '';
+      if (cookie.isEmpty) return {'success': false, 'message': 'No session'};
+
+      debugPrint('[OPP_RNR] Updating Opportunity: $opportunityName → $status');
+
+      final response = await http.post(
+        Uri.parse(AppConfig.updateOpportunityRnrApi),
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Cookie': cookie,
+          'X-Frappe-CSRF-Token': await _getCsrfToken(cookie),
+        },
+        body: {
+          'opportunity_name': opportunityName,
+          'status': status,
+          'custom_next_followup_date1': followUpDate,
+          'comments': comments,
+        },
+      ).timeout(const Duration(seconds: 10));
+
+      debugPrint('[OPP_RNR] Response: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        debugPrint('[OPP_RNR] ✅ Opportunity updated');
+        return {'success': true};
+      }
+
+      debugPrint('[OPP_RNR] ❌ HTTP ${response.statusCode}: ${response.body}');
+      return {'success': false, 'message': 'Failed (${response.statusCode})'};
+    } catch (e) {
+      debugPrint('[OPP_RNR] ❌ Error: $e');
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
   /// Get CSRF token
   static Future<String> _getCsrfToken(String cookie) async {
     try {
