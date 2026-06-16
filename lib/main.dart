@@ -1,6 +1,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'package:http/http.dart' as http;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -320,6 +321,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool _isLeadCallInProgress = false;
   bool _processingLock = false; // Prevents race condition on simultaneous notifications
   int _currentTab = 0; // 0 = Call Queue, 1 = Call History
+  Map<String, int> _kpiCounts = {};
   String _pauseReason = "";
 
   bool get isCallFlowPaused => _isPaused;
@@ -480,6 +482,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Future<void> _refreshQueueDisplay() async {
     try {
       debugPrint("[QUEUE] Refreshing display from API...");
+      _fetchKpiData(); // refresh KPI counts in parallel
       final items = await CallQueueApi.fetchCallQueue();
       if (!mounted) return;
       setState(() {
@@ -493,6 +496,41 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       debugPrint("[QUEUE] ❌ Refresh failed: $e");
     }
   }
+
+  /// Fetches KPI counts from the backend API.
+  Future<void> _fetchKpiData() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cookie = prefs.getString('cookie') ?? '';
+      if (cookie.isEmpty) return;
+
+      final response = await http.get(
+        Uri.parse(AppConfig.kpiApi),
+        headers: {'Cookie': cookie},
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final message = data['message'];
+        if (message is Map<String, dynamic>) {
+          if (!mounted) return;
+          setState(() {
+            _kpiCounts = {
+              'pending_count': _toInt(message['pending_count']),
+              'lead_followup_count': _toInt(message['lead_followup_count']),
+              'opportunity_followup_count': _toInt(message['opportunity_followup_count']),
+              'b2b_count': _toInt(message['b2b_count']),
+            };
+          });
+          debugPrint("[KPI] ✅ Counts: $_kpiCounts");
+        }
+      }
+    } catch (e) {
+      debugPrint("[KPI] ❌ Error: $e");
+    }
+  }
+
+  int _toInt(dynamic v) => v is int ? v : int.tryParse(v?.toString() ?? '0') ?? 0;
 
   /// Called ONLY on FCM foreground trigger — refreshes queue then
   /// auto-calls the first pending call exactly once. No loop.
@@ -1182,8 +1220,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     "B2B Followups",
   ];
 
-  int _categoryCount(String category) =>
-      callQueue.getAll().where((c) => c.category == category).length;
+  int _categoryCount(String category) {
+    switch (category) {
+      case 'Hot Leads':
+        return _kpiCounts['pending_count'] ?? 0;
+      case 'Followup Leads':
+        return _kpiCounts['lead_followup_count'] ?? 0;
+      case 'Order Followups':
+        return _kpiCounts['opportunity_followup_count'] ?? 0;
+      case 'B2B Followups':
+        return _kpiCounts['b2b_count'] ?? 0;
+      default:
+        return 0;
+    }
+  }
 
   String _formatRupees(num v) {
     final s = v.round().toString();

@@ -32,6 +32,10 @@ class AppConfig {
   static const String createIncomingCallLogApi =
       "$baseUrl/api/method/calllog";
 
+  // KPI card counts
+  static const String kpiApi =
+      "$baseUrl/api/method/kpi";
+
   // Fetch current Lead field values
   static const String leadValuesApi =
       "$baseUrl/api/method/leadvalues";
