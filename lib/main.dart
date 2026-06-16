@@ -1818,6 +1818,7 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
   DateTime? callStartTime;
   DateTime? _initiatedAt;
   Timer? callDurationTimer;
+  Timer? _pollTimer;
 
   static const EventChannel _callStateChannel = EventChannel('lead_calling/call_state');
   StreamSubscription? _callStateSubscription;
@@ -2163,6 +2164,7 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
     WidgetsBinding.instance.removeObserver(this);
     timer?.cancel();
     callDurationTimer?.cancel();
+    _pollTimer?.cancel();
     super.dispose();
   }
 
@@ -2215,7 +2217,8 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
     int attempts = 0;
     const maxAttempts = 20; // 60 seconds max
 
-    Timer.periodic(const Duration(seconds: 3), (timer) async {
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
       attempts++;
       if (!mounted || !callStarted) {
         timer.cancel();
