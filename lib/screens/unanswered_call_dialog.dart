@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -61,17 +59,18 @@ class _UnansweredCallDialogState extends State<UnansweredCallDialog> {
       final prefs = await SharedPreferences.getInstance();
       final cookie = prefs.getString('cookie') ?? '';
 
+      // Send as form data — Frappe populates form_dict from form-encoded body
       final response = await http.post(
         Uri.parse(AppConfig.updateLeadRnrApi),
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/x-www-form-urlencoded',
           'Cookie': cookie,
         },
-        body: jsonEncode({
+        body: {
           'lead_name': widget.leadName,
           'status': _selectedStatus,
           'custom_next_followup_date1': _followUpDate!.toIso8601String().split('T')[0],
-        }),
+        },
       ).timeout(const Duration(seconds: 10));
 
       debugPrint('[RNR_UPDATE] Response: ${response.statusCode}');
