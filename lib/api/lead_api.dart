@@ -7,41 +7,79 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
 
 class LeadApi {
-  /// Fetches current field values for a Lead from the backend.
-  static Future<Map<String, dynamic>> getLeadValues(String leadName) async {
+  /// Fetches dropdown OPTIONS for Lead fields from /api/method/leadvalues
+  static Future<Map<String, List<String>>> getFieldOptions() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final cookie = prefs.getString('cookie') ?? '';
       if (cookie.isEmpty) return {};
 
-      debugPrint('[LEAD_API] Fetching values for: $leadName');
+      debugPrint('[LEAD_API] Fetching field options...');
 
-      final response = await http.post(
+      final response = await http.get(
         Uri.parse(AppConfig.leadValuesApi),
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Cookie': cookie,
-        },
-        body: {'lead_name': leadName},
+        headers: {'Cookie': cookie},
       ).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final message = data['message'];
         if (message is Map<String, dynamic>) {
-          debugPrint('[LEAD_API] ✅ Got values for $leadName');
-          return message;
+          final options = <String, List<String>>{};
+          message.forEach((key, value) {
+            if (value is List) {
+              options[key] = value.map((e) => e.toString()).toList();
+            }
+          });
+          debugPrint('[LEAD_API] ✅ Got options for ${options.length} fields');
+          return options;
         }
       }
       debugPrint('[LEAD_API] ❌ HTTP ${response.statusCode}');
       return {};
     } catch (e) {
-      debugPrint('[LEAD_API] ❌ Error: $e');
+      debugPrint('[LEAD_API] ❌ Options error: $e');
       return {};
     }
   }
 
-  /// Updates Lead fields after an answered call.
+  /// Fetches CURRENT VALUES of a specific Lead from Frappe resource API
+  static Future<Map<String, dynamic>> getLeadCurrentValues(String leadName) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cookie = prefs.getString('cookie') ?? '';
+      if (cookie.isEmpty || leadName.isEmpty) return {};
+
+      debugPrint('[LEAD_API] Fetching current values for: $leadName');
+
+      final fields = Uri.encodeComponent(jsonEncode([
+        "status", "custom_customer_category", "custom_customer_type",
+        "custom_district", "custom_citytown", "custom_next_followup_date1"
+      ]));
+      final url = '${AppConfig.baseUrl}/api/resource/Lead/$leadName?fields=$fields';
+
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {'Cookie': cookie},
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final values = data['data'] ?? {};
+        if (values is Map<String, dynamic>) {
+          debugPrint('[LEAD_API] ✅ Got values for $leadName');
+          return values;
+        }
+      }
+      debugPrint('[LEAD_API] ❌ HTTP ${response.statusCode}');
+      return {};
+    } catch (e) {
+      debugPrint('[LEAD_API] ❌ Values error: $e');
+      return {};
+    }
+  }
+
+  /// Updates Lead fields via /api/method/update_lead
   static Future<Map<String, dynamic>> updateLead({
     required String leadName,
     required Map<String, dynamic> fields,

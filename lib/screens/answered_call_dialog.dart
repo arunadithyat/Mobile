@@ -44,7 +44,7 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
   bool _loading = true;
   bool _isSubmitting = false;
 
-  // Lead field values (pre-populated from API)
+  // Current values (pre-populated from Lead)
   String _status = '';
   String _customerCategory = '';
   String _customerType = '';
@@ -53,53 +53,46 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
   DateTime? _followUpDate;
   final _commentsController = TextEditingController();
 
-  // Field options (from API response)
-  List<String> _statusOptions = [];
-  List<String> _categoryOptions = [];
-  List<String> _typeOptions = [];
-  List<String> _districtOptions = [];
-  List<String> _cityOptions = [];
+  // Dropdown options (from leadvalues API)
+  Map<String, List<String>> _options = {};
 
   @override
   void initState() {
     super.initState();
-    _fetchLeadData();
+    _fetchData();
   }
 
-  Future<void> _fetchLeadData() async {
-    final data = await LeadApi.getLeadValues(widget.leadName);
+  Future<void> _fetchData() async {
+    // Fetch both in parallel
+    final results = await Future.wait([
+      LeadApi.getFieldOptions(),
+      LeadApi.getLeadCurrentValues(widget.leadName),
+    ]);
+
+    final options = results[0] as Map<String, List<String>>;
+    final values = results[1] as Map<String, dynamic>;
+
     if (!mounted) return;
 
     setState(() {
-      // Current values
-      _status = (data['status'] ?? '').toString();
-      _customerCategory = (data['custom_customer_category'] ?? '').toString();
-      _customerType = (data['custom_customer_type'] ?? '').toString();
-      _district = (data['custom_district'] ?? '').toString();
-      _cityTown = (data['custom_citytown'] ?? '').toString();
+      _options = options;
 
-      final followUp = data['custom_next_followup_date1']?.toString() ?? '';
+      // Pre-populate with current values
+      _status = (values['status'] ?? '').toString();
+      _customerCategory = (values['custom_customer_category'] ?? '').toString();
+      _customerType = (values['custom_customer_type'] ?? '').toString();
+      _district = (values['custom_district'] ?? '').toString();
+      _cityTown = (values['custom_citytown'] ?? '').toString();
+
+      final followUp = (values['custom_next_followup_date1'] ?? '').toString();
       if (followUp.isNotEmpty) _followUpDate = DateTime.tryParse(followUp);
-
-      // Field options from API
-      _statusOptions = _toList(data['status_options']);
-      _categoryOptions = _toList(data['category_options']);
-      _typeOptions = _toList(data['type_options']);
-      _districtOptions = _toList(data['district_options']);
-      _cityOptions = _toList(data['city_options']);
-
-      // Default status if empty
-      if (_status.isEmpty && _statusOptions.isNotEmpty) {
-        _status = _statusOptions.first;
-      }
 
       _loading = false;
     });
   }
 
-  List<String> _toList(dynamic value) {
-    if (value is List) return value.map((e) => e.toString()).toList();
-    return [];
+  List<String> _getOptions(String fieldName) {
+    return _options[fieldName] ?? [];
   }
 
   Future<void> _pickFollowUpDate() async {
@@ -130,7 +123,7 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
     setState(() => _isSubmitting = true);
 
     try {
-      // 1. Update Call Log doctype (duration, status, times)
+      // 1. Update Call Log doctype
       final fromNumber = await AutoDialer.getOwnNumber();
       await CallLogDoctypeApi.updateCallLog(
         callLogName: widget.callLogName,
@@ -167,7 +160,6 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
         'custom_citytown': _cityTown,
       };
 
-      // Only include customer_type if category != B2C
       if (_customerCategory.isNotEmpty && _customerCategory != 'B2C') {
         leadFields['custom_customer_type'] = _customerType;
       }
@@ -226,17 +218,18 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
 
   Widget _buildDropdown(
     String label,
+    String fieldKey,
     String value,
-    List<String> options,
     ValueChanged<String> onChanged, {
     bool visible = true,
   }) {
     if (!visible) return const SizedBox.shrink();
-    // Ensure current value is in options list
+    final options = _getOptions(fieldKey);
     final safeOptions = [...options];
     if (value.isNotEmpty && !safeOptions.contains(value)) {
       safeOptions.insert(0, value);
     }
+    final hasFill = value.isNotEmpty;
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: Column(
@@ -255,11 +248,13 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
               ),
-              filled: value.isNotEmpty,
-              fillColor: value.isNotEmpty ? Colors.green.shade50 : null,
+              filled: hasFill,
+              fillColor: hasFill ? Colors.green.shade50 : null,
             ),
             items: safeOptions
-                .map((o) => DropdownMenuItem(value: o, child: Text(o, style: const TextStyle(fontSize: 14))))
+                .map((o) => DropdownMenuItem(
+                    value: o,
+                    child: Text(o, style: const TextStyle(fontSize: 14))))
                 .toList(),
             onChanged: (v) {
               if (v != null) onChanged(v);
@@ -341,27 +336,27 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
               ),
               const SizedBox(height: 16),
 
-              // Dynamic fields
-              _buildDropdown("Lead Status", _status, _statusOptions,
+              // Dynamic dropdowns — options from leadvalues, values from Lead
+              _buildDropdown("Lead Status", "status", _status,
                   (v) => setState(() => _status = v)),
 
-              _buildDropdown("Customer Category", _customerCategory,
-                  _categoryOptions,
+              _buildDropdown("Customer Category", "custom_customer_category",
+                  _customerCategory,
                   (v) => setState(() => _customerCategory = v)),
 
               _buildDropdown(
                 "Customer Type",
+                "custom_customer_type",
                 _customerType,
-                _typeOptions,
                 (v) => setState(() => _customerType = v),
                 visible: _customerCategory.isNotEmpty &&
                     _customerCategory != 'B2C',
               ),
 
-              _buildDropdown("District", _district, _districtOptions,
+              _buildDropdown("District", "custom_district", _district,
                   (v) => setState(() => _district = v)),
 
-              _buildDropdown("City / Town", _cityTown, _cityOptions,
+              _buildDropdown("City / Town", "custom_citytown", _cityTown,
                   (v) => setState(() => _cityTown = v)),
 
               // Follow-up date
@@ -415,8 +410,8 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
               const Align(
                 alignment: Alignment.centerLeft,
                 child: Text("Comments",
-                    style: TextStyle(
-                        fontSize: 13, fontWeight: FontWeight.w600)),
+                    style:
+                        TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
               ),
               const SizedBox(height: 6),
               TextField(
