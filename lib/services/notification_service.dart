@@ -91,7 +91,7 @@ class NotificationService {
             .toString()
             .trim()
             .isNotEmpty;
-    final isValidType = ['NEW_LEAD_CALL', 'LEAD_CALL'].contains(type.toUpperCase());
+    final isValidType = ['NEW_LEAD_CALL', 'LEAD_CALL', 'CALL_LOG_CALL'].contains(type.toUpperCase());
     debugPrint("[NOTIFY] isValidType: $isValidType");
     
     if (!isValidType && !hasLeadIdentity) {
@@ -100,10 +100,19 @@ class NotificationService {
       return null;
     }
 
+    final rawDoctype = (pick(['doctype', 'doc_type', 'docType']) ?? '').toString();
+    final rawDocname = (pick(['docname', 'doc_name', 'docName']) ?? '').toString();
+    final rawLead = (pick(['lead', 'lead_name', 'lead_docname']) ?? '').toString();
+
+    // When doctype is "Call Log", docname IS the Call Log name
+    final callLogName = rawDoctype == 'Call Log' ? rawDocname : '';
+
     final normalized = {
       'type': 'NEW_LEAD_CALL',
-      'doctype': (pick(['doctype', 'doc_type', 'docType']) ?? '').toString(),
-      'docname': (pick(['docname', 'doc_name', 'docName']) ?? '').toString(),
+      'doctype': rawDoctype,
+      'docname': rawDocname,
+      'call_log_name': callLogName,
+      'lead': rawLead,
       'customer_name':
           (pick(['customer_name', 'customerName', 'customer', 'lead_name']) ??
                   'Customer')

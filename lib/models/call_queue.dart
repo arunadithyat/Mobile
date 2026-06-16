@@ -49,7 +49,10 @@ class CallQueueItem {
     final docname = (data['docname'] ?? data['reference_docname'] ?? '').toString();
 
     return CallQueueItem(
-      callLogName: (data['name'] ?? data['call_log_name'] ?? '').toString(),
+      // callLogName: from API 'name', FCM 'call_log_name', or docname when doctype is Call Log
+      callLogName: (data['name'] ?? data['call_log_name'] ??
+              (doctype == 'Call Log' ? docname : '') ?? '')
+          .toString(),
       doctype: doctype,
       docname: docname,
       customerName: data['customer_name'] ?? '',
