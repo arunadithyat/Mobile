@@ -337,8 +337,9 @@ class CallLogDoctypeApi {
 
       debugPrint('[CALL_LOG_DOCTYPE] POST incoming: from=$fromNumber | status=$erpStatus | duration=$durationSeconds');
 
+      final url = '${AppConfig.updateCallLogApi}?ignore_mandatory=1&ignore_links=1&ignore_permissions=1';
       final response = await http.post(
-        Uri.parse(AppConfig.updateCallLogApi),
+        Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
           'Cookie': cookie,
