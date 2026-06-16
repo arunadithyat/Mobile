@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:lead_calling/api/call_log_api.dart';
+import 'package:lead_calling/services/auto_dialer.dart';
 
 class CallCompletionDialog extends StatefulWidget {
   final String doctype;
@@ -305,9 +306,11 @@ class _CallCompletionDialogState extends State<CallCompletionDialog> {
       debugPrint("[COMPLETION] Result: $result");
 
       // Post to actual Call Log doctype (separate from Error Log)
+      final fromNumber = await AutoDialer.getOwnNumber();
       final callLogResult = await CallLogDoctypeApi.updateCallLog(
         callLogName: widget.callLogName,
         mobileNo: widget.mobileNo,
+        fromNumber: fromNumber,
         startTime: widget.initiatedTime,
         durationSeconds: widget.callDuration.inSeconds,
         attended: _attended,

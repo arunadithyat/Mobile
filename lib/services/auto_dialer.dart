@@ -174,6 +174,19 @@ class AutoDialer {
     };
   }
 
+  /// Returns the device's own phone number (SIM line number).
+  /// May return empty on some devices — not all carriers support this.
+  static Future<String> getOwnNumber() async {
+    if (!Platform.isAndroid) return '';
+    try {
+      final result = await _channel.invokeMethod<String>('getOwnNumber');
+      return result ?? '';
+    } catch (e) {
+      debugPrint('[DIALER] getOwnNumber error: $e');
+      return '';
+    }
+  }
+
   /// Returns true if the device is currently on a phone call
   /// (active, dialing, or ringing).
   static Future<bool> isOnCall() async {

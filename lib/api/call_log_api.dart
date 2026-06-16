@@ -304,6 +304,7 @@ class CallLogDoctypeApi {
   static Future<Map<String, dynamic>> updateCallLog({
     required String callLogName,
     required String mobileNo,
+    required String fromNumber,
     required DateTime startTime,
     required int durationSeconds,
     required bool attended,
@@ -322,10 +323,15 @@ class CallLogDoctypeApi {
 
       final erpStatus = attended ? 'Completed' : 'No Answer';
 
+      // Calculate end_time = start_time + duration
+      final endTime = startTime.add(Duration(seconds: durationSeconds));
+
       final data = {
+        'from': fromNumber,
         'to': mobileNo,
         'type': 'Outgoing',
         'start_time': startTime.toIso8601String(),
+        'end_time': endTime.toIso8601String(),
         'duration': durationSeconds,
         'status': erpStatus,
       };

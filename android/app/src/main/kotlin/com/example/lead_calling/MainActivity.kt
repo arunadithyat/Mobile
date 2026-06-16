@@ -61,6 +61,15 @@ class MainActivity : FlutterActivity() {
           println("[NATIVE] isOnCall: $onCall (state=${tm.callState})")
           result.success(onCall)
         }
+        "getOwnNumber" -> {
+          try {
+            val tm = getSystemService(Context.TELEPHONY_SERVICE) as android.telephony.TelephonyManager
+            val number = tm.line1Number ?: ""
+            result.success(number)
+          } catch (e: Exception) {
+            result.success("")
+          }
+        }
         "ensureCallLogPermission" -> {
           if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED) {
             result.success(true)
