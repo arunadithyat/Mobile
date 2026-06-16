@@ -249,6 +249,7 @@ class CallLogApi {
     required String leadName,
     required String status,
     required String followUpDate,
+    String comments = '',
   }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -270,6 +271,7 @@ class CallLogApi {
           'lead_name': leadName,
           'status': status,
           'custom_next_followup_date1': followUpDate,
+          'comments': comments,
         },
       ).timeout(const Duration(seconds: 10));
 
