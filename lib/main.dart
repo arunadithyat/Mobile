@@ -1893,6 +1893,7 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
     final doctype = widget.data["doctype"]?.toString() ?? "Lead";
     final docname = widget.data["docname"]?.toString() ?? "";
     final mobileNo = widget.data["mobile_no"]?.toString() ?? "";
+    final callLogName = widget.data["call_log_name"]?.toString() ?? "";
     callDurationTimer?.cancel();
     final duration = callDuration ?? _getCallDuration();
 
@@ -1917,6 +1918,7 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
         docname: docname,
         customerName: customerName,
         mobileNo: mobileNo,
+        callLogName: callLogName,
         callDuration: duration,
         initiatedTime: _initiatedAt ?? DateTime.now(),
         initialCallStatus: callStatus,

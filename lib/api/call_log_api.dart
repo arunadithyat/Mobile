@@ -298,12 +298,15 @@ class IncomingCallSyncApi {
 /// Posts call data to the actual Call Log doctype in ERPNext.
 /// This is separate from the Error Log posting (which stays as-is).
 class CallLogDoctypeApi {
+  /// Updates the Call Log record in ERPNext.
+  /// Uses callLogName to find the exact record (from get_pending_calls API).
+  /// attended: true → Completed, false → No Answer
   static Future<Map<String, dynamic>> updateCallLog({
+    required String callLogName,
     required String mobileNo,
     required DateTime startTime,
     required int durationSeconds,
-    required String status,
-    String? callLogName, // if updating existing record
+    required bool attended,
   }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -312,26 +315,12 @@ class CallLogDoctypeApi {
         return {'success': false, 'message': 'No session'};
       }
 
-      // Map app call status to ERPNext Call Log status values
-      String erpStatus;
-      switch (status.toLowerCase()) {
-        case 'connected':
-          erpStatus = 'Completed';
-        case 'missed':
-        case 'not answered':
-        case 'not connected':
-          erpStatus = 'No Answer';
-        case 'busy':
-          erpStatus = 'Busy';
-        case 'dropped':
-        case 'disconnected':
-          erpStatus = 'Failed';
-        case 'cancelled':
-        case 'canceled':
-          erpStatus = 'Canceled';
-        default:
-          erpStatus = 'Completed';
+      if (callLogName.isEmpty) {
+        debugPrint('[CALL_LOG_DOCTYPE] ⚠️ No callLogName — skipping update');
+        return {'success': false, 'message': 'No Call Log name'};
       }
+
+      final erpStatus = attended ? 'Completed' : 'No Answer';
 
       final data = {
         'to': mobileNo,
@@ -341,43 +330,23 @@ class CallLogDoctypeApi {
         'status': erpStatus,
       };
 
-      debugPrint('[CALL_LOG_DOCTYPE] Posting to Call Log doctype...');
-      debugPrint('[CALL_LOG_DOCTYPE] to: $mobileNo');
-      debugPrint('[CALL_LOG_DOCTYPE] start_time: ${startTime.toIso8601String()}');
-      debugPrint('[CALL_LOG_DOCTYPE] duration: $durationSeconds');
-      debugPrint('[CALL_LOG_DOCTYPE] status: $status → $erpStatus');
+      final url = '${AppConfig.updateCallLogApi}/$callLogName';
+      debugPrint('[CALL_LOG_DOCTYPE] PUT $url');
+      debugPrint('[CALL_LOG_DOCTYPE] to: $mobileNo | duration: $durationSeconds | status: $erpStatus');
 
-      String url;
-      http.Response response;
-
-      if (callLogName != null && callLogName.isNotEmpty) {
-        // Update existing Call Log record
-        url = '${AppConfig.updateCallLogApi}/$callLogName';
-        response = await http.put(
-          Uri.parse(url),
-          headers: {
-            'Content-Type': 'application/json',
-            'Cookie': cookie,
-          },
-          body: jsonEncode(data),
-        ).timeout(const Duration(seconds: 10));
-      } else {
-        // Create new Call Log record
-        url = AppConfig.updateCallLogApi;
-        response = await http.post(
-          Uri.parse(url),
-          headers: {
-            'Content-Type': 'application/json',
-            'Cookie': cookie,
-          },
-          body: jsonEncode(data),
-        ).timeout(const Duration(seconds: 10));
-      }
+      final response = await http.put(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          'Cookie': cookie,
+        },
+        body: jsonEncode(data),
+      ).timeout(const Duration(seconds: 10));
 
       debugPrint('[CALL_LOG_DOCTYPE] Response: ${response.statusCode}');
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        debugPrint('[CALL_LOG_DOCTYPE] ✅ Call Log updated successfully');
+      if (response.statusCode == 200) {
+        debugPrint('[CALL_LOG_DOCTYPE] ✅ Call Log $callLogName updated');
         return {'success': true, 'message': 'Call Log updated'};
       }
 

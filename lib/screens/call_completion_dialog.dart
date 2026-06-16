@@ -6,6 +6,7 @@ class CallCompletionDialog extends StatefulWidget {
   final String docname;
   final String customerName;
   final String mobileNo;
+  final String callLogName;
   final Duration callDuration;
   final DateTime initiatedTime;
   final String? initialCallStatus;
@@ -21,6 +22,7 @@ class CallCompletionDialog extends StatefulWidget {
     required this.docname,
     required this.customerName,
     required this.mobileNo,
+    this.callLogName = '',
     required this.callDuration,
     required this.initiatedTime,
     this.initialCallStatus,
@@ -304,10 +306,11 @@ class _CallCompletionDialogState extends State<CallCompletionDialog> {
 
       // Post to actual Call Log doctype (separate from Error Log)
       final callLogResult = await CallLogDoctypeApi.updateCallLog(
+        callLogName: widget.callLogName,
         mobileNo: widget.mobileNo,
         startTime: widget.initiatedTime,
         durationSeconds: widget.callDuration.inSeconds,
-        status: _callStatus,
+        attended: _attended,
       );
       debugPrint("[COMPLETION] Call Log doctype result: $callLogResult");
 
