@@ -24,6 +24,7 @@ import 'screens/call_history_tab.dart';
 import 'screens/chatbot_screen.dart';
 import 'screens/answered_call_dialog.dart';
 import 'screens/unanswered_call_dialog.dart';
+import 'package:lead_calling/screens/webview_screen.dart';
 import 'services/message_service.dart';
 
 /// Launches the phone dialer to call the given phone number
@@ -1132,7 +1133,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => const WebViewScreen(
+                  builder: (_) => WebViewScreen(
                     title: 'Tasks',
                     url: 'https://erp.homegeniegroup.in/TG',
                   ),
@@ -1148,7 +1149,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => const WebViewScreen(
+                  builder: (_) => WebViewScreen(
                     title: 'Dashboard',
                     url: 'https://erp.homegeniegroup.in/salesperson',
                   ),
@@ -1164,7 +1165,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => const WebViewScreen(
+                  builder: (_) => WebViewScreen(
                     title: 'ERP Portal',
                     url: 'https://erp.homegeniegroup.in',
                   ),
