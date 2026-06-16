@@ -408,6 +408,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               calledAt: timestamp,
             ));
 
+            // Create Call Log in ERPNext for this incoming call
+            final ownNumber = await AutoDialer.getOwnNumber();
+            await CallLogDoctypeApi.createIncomingCallLog(
+              fromNumber: item.mobileNo,
+              toNumber: ownNumber,
+              startTime: timestamp,
+              durationSeconds: durationSeconds,
+              attended: attended,
+            );
+
             debugPrint(
                 "[INCOMING_SYNC] 📞 Matched: ${item.customerName} ($incomingNumber) — $status ${durationSeconds}s");
             break; // one match per incoming call

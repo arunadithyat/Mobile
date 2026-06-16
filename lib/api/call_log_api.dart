@@ -305,6 +305,60 @@ class IncomingCallSyncApi {
 /// Posts call data to the actual Call Log doctype in ERPNext.
 /// This is separate from the Error Log posting (which stays as-is).
 class CallLogDoctypeApi {
+  /// Creates a Call Log record for an incoming call from a queued customer.
+  static Future<Map<String, dynamic>> createIncomingCallLog({
+    required String fromNumber,
+    required String toNumber,
+    required DateTime startTime,
+    required int durationSeconds,
+    required bool attended,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cookie = prefs.getString('cookie') ?? '';
+      if (cookie.isEmpty) {
+        return {'success': false, 'message': 'No session'};
+      }
+
+      final erpStatus = attended ? 'Completed' : 'No Answer';
+      final endTime = startTime.add(Duration(seconds: durationSeconds));
+
+      final data = <String, dynamic>{
+        'from': fromNumber,
+        'type': 'Incoming',
+        'start_time': startTime.toIso8601String(),
+        'end_time': endTime.toIso8601String(),
+        'duration': durationSeconds,
+        'status': erpStatus,
+      };
+      if (toNumber.isNotEmpty) {
+        data['to'] = toNumber;
+      }
+
+      debugPrint('[CALL_LOG_DOCTYPE] POST incoming: from=$fromNumber | status=$erpStatus | duration=$durationSeconds');
+
+      final response = await http.post(
+        Uri.parse(AppConfig.updateCallLogApi),
+        headers: {
+          'Content-Type': 'application/json',
+          'Cookie': cookie,
+        },
+        body: jsonEncode(data),
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        debugPrint('[CALL_LOG_DOCTYPE] ✅ Incoming Call Log created');
+        return {'success': true};
+      }
+
+      debugPrint('[CALL_LOG_DOCTYPE] ❌ HTTP ${response.statusCode}: ${response.body}');
+      return {'success': false, 'message': 'Failed (${response.statusCode})'};
+    } catch (e) {
+      debugPrint('[CALL_LOG_DOCTYPE] ❌ Error: $e');
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
   /// Updates the Call Log record in ERPNext.
   /// Uses callLogName to find the exact record (from get_pending_calls API).
   /// attended: true → Completed, false → No Answer
