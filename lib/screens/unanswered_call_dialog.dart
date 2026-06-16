@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 
-import '../config.dart';
+import '../api/call_log_api.dart';
 
 class UnansweredCallDialog extends StatefulWidget {
   final String leadName; // e.g. CRM-LEAD-2026-14403
@@ -56,28 +54,15 @@ class _UnansweredCallDialogState extends State<UnansweredCallDialog> {
     setState(() => _isSubmitting = true);
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final cookie = prefs.getString('cookie') ?? '';
-
-      // Send as form data — Frappe populates form_dict from form-encoded body
-      final response = await http.post(
-        Uri.parse(AppConfig.updateLeadRnrApi),
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Cookie': cookie,
-        },
-        body: {
-          'lead_name': widget.leadName,
-          'status': _selectedStatus,
-          'custom_next_followup_date1': _followUpDate!.toIso8601String().split('T')[0],
-        },
-      ).timeout(const Duration(seconds: 10));
-
-      debugPrint('[RNR_UPDATE] Response: ${response.statusCode}');
+      final result = await CallLogApi.updateLeadRnr(
+        leadName: widget.leadName,
+        status: _selectedStatus,
+        followUpDate: _followUpDate!.toIso8601String().split('T')[0],
+      );
 
       if (!mounted) return;
 
-      if (response.statusCode == 200) {
+      if (result['success'] == true) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text("✅ ${widget.customerName} marked as $_selectedStatus"),
@@ -88,7 +73,7 @@ class _UnansweredCallDialogState extends State<UnansweredCallDialog> {
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text("❌ Failed to update: HTTP ${response.statusCode}"),
+            content: Text("❌ Failed to update: ${result['message']}"),
             backgroundColor: Colors.red,
           ),
         );

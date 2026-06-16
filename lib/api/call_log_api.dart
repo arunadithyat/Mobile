@@ -244,6 +244,50 @@ class CallLogApi {
     }
   }
 
+  /// Updates Lead status after unanswered call (RNR/Busy/etc.)
+  static Future<Map<String, dynamic>> updateLeadRnr({
+    required String leadName,
+    required String status,
+    required String followUpDate,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cookie = prefs.getString('cookie') ?? '';
+      if (cookie.isEmpty) {
+        return {'success': false, 'message': 'No session'};
+      }
+
+      debugPrint('[RNR] Updating Lead: $leadName → $status, followup: $followUpDate');
+
+      final response = await http.post(
+        Uri.parse(AppConfig.updateLeadRnrApi),
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Cookie': cookie,
+          'X-Frappe-CSRF-Token': await _getCsrfToken(cookie),
+        },
+        body: {
+          'lead_name': leadName,
+          'status': status,
+          'custom_next_followup_date1': followUpDate,
+        },
+      ).timeout(const Duration(seconds: 10));
+
+      debugPrint('[RNR] Response: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        debugPrint('[RNR] ✅ Lead updated');
+        return {'success': true};
+      }
+
+      debugPrint('[RNR] ❌ HTTP ${response.statusCode}: ${response.body}');
+      return {'success': false, 'message': 'Failed (${response.statusCode})'};
+    } catch (e) {
+      debugPrint('[RNR] ❌ Error: $e');
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
   /// Get CSRF token
   static Future<String> _getCsrfToken(String cookie) async {
     try {
