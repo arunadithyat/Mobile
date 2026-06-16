@@ -4,6 +4,7 @@ class CallQueueItem {
   final String callLogName; // Call Log document name (e.g. "CALL-0001") for post-call updates
   final String doctype;
   final String docname;
+  final String lead; // Lead/Opportunity reference (e.g. CRM-LEAD-2026-14403)
   final String customerName;
   final String mobileNo;
   final DateTime queuedAt;
@@ -15,6 +16,7 @@ class CallQueueItem {
     this.callLogName = '',
     required this.doctype,
     required this.docname,
+    this.lead = '',
     required this.customerName,
     required this.mobileNo,
     required this.queuedAt,
@@ -32,6 +34,7 @@ class CallQueueItem {
       'call_log_name': callLogName,
       'doctype': doctype,
       'docname': docname,
+      'lead': lead,
       'customer_name': customerName,
       'mobile_no': mobileNo,
       'auto_call': autoCall,
@@ -55,6 +58,7 @@ class CallQueueItem {
           .toString(),
       doctype: doctype,
       docname: docname,
+      lead: (data['lead'] ?? data['lead_name'] ?? data['reference_docname'] ?? '').toString(),
       customerName: data['customer_name'] ?? '',
       mobileNo: data['mobile_no'] ?? '',
       queuedAt: _parseDateTime(data),

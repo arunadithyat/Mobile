@@ -32,6 +32,10 @@ class AppConfig {
   static const String createIncomingCallLogApi =
       "$baseUrl/api/method/calllog";
 
+  // Update Lead status (RNR/Busy/etc.) after unanswered call
+  static const String updateLeadRnrApi =
+      "$baseUrl/api/method/update_lead_rnr_followup";
+
   // Fix #9: Pause interval options moved to config
   static const List<int> pauseIntervalOptions = [5, 15, 30];
 

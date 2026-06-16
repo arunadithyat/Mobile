@@ -24,6 +24,7 @@ import 'models/call_queue.dart';
 import 'services/call_history_storage.dart';
 import 'screens/call_history_tab.dart';
 import 'screens/chatbot_screen.dart';
+import 'screens/unanswered_call_dialog.dart';
 import 'services/message_service.dart';
 
 /// Launches the phone dialer to call the given phone number
@@ -1838,7 +1839,7 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
                 ? callInfo['retrievedAttempt'] as int
                 : int.tryParse(callInfo['retrievedAttempt']?.toString() ?? '-1') ?? -1,
           ));
-          if (mounted) Navigator.pop(context, {'status': 'not_connected'});
+          if (mounted) _showUnansweredDialog();
           return;
         }
         final durationSeconds = callInfo['durationSeconds'] is int
@@ -1953,6 +1954,34 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
     ).then((_) {
       if (mounted) Navigator.pop(context);
     });
+  }
+
+  /// Shows the unanswered call dialog for RNR/Busy/etc. status update.
+  /// The lead field from the queue data tells us which Lead to update.
+  Future<void> _showUnansweredDialog() async {
+    final leadName = widget.data['lead']?.toString() ?? '';
+    final customerName = widget.data['customer_name']?.toString() ?? 'Unknown';
+    final mobileNo = widget.data['mobile_no']?.toString() ?? '';
+
+    if (leadName.isEmpty) {
+      debugPrint('[RNR] No lead reference — skipping dialog');
+      if (mounted) Navigator.pop(context, {'status': 'not_connected'});
+      return;
+    }
+
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => UnansweredCallDialog(
+        leadName: leadName,
+        customerName: customerName,
+        mobileNo: mobileNo,
+      ),
+    );
+
+    if (mounted) {
+      Navigator.pop(context, {'status': 'not_connected', ...?result});
+    }
   }
 
   Future<void> makeCall() async {
@@ -2147,7 +2176,7 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
                 ? callInfo['retrievedAttempt'] as int
                 : -1,
           ));
-          if (mounted) Navigator.pop(context, {'status': 'not_connected'});
+          if (mounted) _showUnansweredDialog();
         } else {
           if (mounted) {
             _showCallCompletionDialog(
@@ -2217,7 +2246,7 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
               ? callInfo['retrievedAttempt'] as int
               : int.tryParse(callInfo['retrievedAttempt']?.toString() ?? '-1') ?? -1,
         ));
-        if (mounted) Navigator.pop(context, {'status': 'not_connected'});
+        if (mounted) _showUnansweredDialog();
         return;
       }
 
