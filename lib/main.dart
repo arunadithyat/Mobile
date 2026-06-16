@@ -1152,6 +1152,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Future<void> logout() async {
+    // Clear app state so next user starts fresh
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('is_paused');
+    await prefs.remove('pause_reason');
+    await prefs.remove('synced_incoming_calls');
+    await prefs.remove('last_incoming_sync');
+    await prefs.remove('call_history');
+
     await LoginApi.logout();
     if (!mounted) return;
     Navigator.pushReplacement(
