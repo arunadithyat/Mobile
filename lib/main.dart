@@ -408,15 +408,27 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               calledAt: timestamp,
             ));
 
-            // Create Call Log in ERPNext for this incoming call
-            final ownNumber = await AutoDialer.getOwnNumber();
-            await CallLogDoctypeApi.createIncomingCallLog(
-              fromNumber: item.mobileNo,
-              toNumber: ownNumber,
-              startTime: timestamp,
-              durationSeconds: durationSeconds,
-              attended: attended,
-            );
+            // Create Call Log in ERPNext — dedup by number+timestamp
+            final syncKey = '${item.mobileNo}_${timestamp.millisecondsSinceEpoch}';
+            final syncedCalls = prefs.getStringList('synced_incoming_calls') ?? [];
+            if (!syncedCalls.contains(syncKey)) {
+              final ownNumber = await AutoDialer.getOwnNumber();
+              await CallLogDoctypeApi.createIncomingCallLog(
+                fromNumber: item.mobileNo,
+                toNumber: ownNumber,
+                startTime: timestamp,
+                durationSeconds: durationSeconds,
+                attended: attended,
+              );
+              syncedCalls.add(syncKey);
+              // Keep only last 200 entries to avoid unbounded growth
+              if (syncedCalls.length > 200) {
+                syncedCalls.removeRange(0, syncedCalls.length - 200);
+              }
+              await prefs.setStringList('synced_incoming_calls', syncedCalls);
+            } else {
+              debugPrint("[INCOMING_SYNC] Skipped duplicate Call Log: $syncKey");
+            }
 
             debugPrint(
                 "[INCOMING_SYNC] 📞 Matched: ${item.customerName} ($incomingNumber) — $status ${durationSeconds}s");
