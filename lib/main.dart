@@ -337,6 +337,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// permission dialog if another one is already showing. This is why the
   /// notification permission was never asked on fresh installs.
   Future<void> _bootstrap() async {
+    // Restore pause state from SharedPreferences
+    await _restorePauseState();
+
     // Load queue FIRST so user sees data immediately
     _refreshQueueDisplay();
 
@@ -462,6 +465,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   String _last10(String number) {
     final digits = number.replaceAll(RegExp(r'[^\d]'), '');
     return digits.length >= 10 ? digits.substring(digits.length - 10) : digits;
+  }
+
+  Future<void> _restorePauseState() async {
+    final prefs = await SharedPreferences.getInstance();
+    final paused = prefs.getBool('is_paused') ?? false;
+    final reason = prefs.getString('pause_reason') ?? '';
+    if (paused && reason.isNotEmpty) {
+      setState(() {
+        _isPaused = true;
+        _pauseReason = reason;
+      });
+      debugPrint("[PAUSE] ✅ Restored: On $reason");
+    }
   }
 
   Future<void> _requestCallTelemetryPermissions() async {
@@ -941,17 +957,21 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Future<void> toggleCallFlow() async {
+    final prefs = await SharedPreferences.getInstance();
+
     if (isCallFlowPaused) {
-      // Resume call flow
+      final prevReason = _pauseReason;
       setState(() {
         _isPaused = false;
         _pauseReason = "";
       });
+      await prefs.setBool('is_paused', false);
+      await prefs.setString('pause_reason', '');
+      _postPauseLog("RESUMED", prevReason);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Call flow resumed")),
       );
     } else {
-      // Pause call flow with a reason — stays paused until manual resume
       final reason = await _selectPauseReason();
       if (reason == null || !mounted) return;
 
@@ -959,9 +979,41 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         _isPaused = true;
         _pauseReason = reason;
       });
+      await prefs.setBool('is_paused', true);
+      await prefs.setString('pause_reason', reason);
+      _postPauseLog("PAUSED", reason);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Call flow paused — $reason")),
       );
+    }
+  }
+
+  Future<void> _postPauseLog(String action, String reason) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cookie = prefs.getString('cookie') ?? '';
+      final username = prefs.getString('username') ?? '';
+      if (cookie.isEmpty) return;
+
+      await http.post(
+        Uri.parse('${AppConfig.baseUrl}/api/resource/Error%20Log'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Cookie': cookie,
+        },
+        body: jsonEncode({
+          'title': 'Call Flow $action — $reason',
+          'error': jsonEncode({
+            'type': 'CALL_FLOW_$action',
+            'reason': reason,
+            'user': username,
+            'timestamp': DateTime.now().toIso8601String(),
+          }),
+        }),
+      ).timeout(const Duration(seconds: 5));
+      debugPrint('[PAUSE_LOG] ✅ $action — $reason logged');
+    } catch (e) {
+      debugPrint('[PAUSE_LOG] ❌ $e');
     }
   }
 
