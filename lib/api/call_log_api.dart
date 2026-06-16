@@ -91,6 +91,7 @@ class CallLogApi {
     required String disconnectedStatus,
     required String notes,
     required bool attended,
+    String fromNumber = '',
     String dataSource = 'unknown',
     bool permissionGranted = false,
     int retrievedAttempt = -1,
@@ -107,11 +108,15 @@ class CallLogApi {
         };
       }
 
+      final endTime = initiatedTime.add(Duration(seconds: callDuration));
+
       // Format call update as error log entry
       final callDetails = {
         "type": "CALL_COMPLETED",
         "timestamp": DateTime.now().toIso8601String(),
         "initiated_time": initiatedTime.toIso8601String(),
+        "end_time": endTime.toIso8601String(),
+        "from": fromNumber,
         "initiated_by": username,
         "doctype_reference": doctype,
         "docname_reference": docname,

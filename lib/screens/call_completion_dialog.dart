@@ -284,6 +284,9 @@ class _CallCompletionDialogState extends State<CallCompletionDialog> {
     debugPrint("[COMPLETION] Submitting call completion...");
 
     try {
+      // Get device's own number for both API calls
+      final fromNumber = await AutoDialer.getOwnNumber();
+
       // Log call completion to Error Log
       final result = await CallLogApi.updateCallLog(
         doctype: widget.doctype,
@@ -298,6 +301,7 @@ class _CallCompletionDialogState extends State<CallCompletionDialog> {
             : _disconnectedStatus,
         notes: _notes,
         attended: _attended,
+        fromNumber: fromNumber,
         dataSource: widget.dataSource,
         permissionGranted: widget.permissionGranted,
         retrievedAttempt: widget.retrievedAttempt,
@@ -306,7 +310,6 @@ class _CallCompletionDialogState extends State<CallCompletionDialog> {
       debugPrint("[COMPLETION] Result: $result");
 
       // Post to actual Call Log doctype (separate from Error Log)
-      final fromNumber = await AutoDialer.getOwnNumber();
       final callLogResult = await CallLogDoctypeApi.updateCallLog(
         callLogName: widget.callLogName,
         mobileNo: widget.mobileNo,
