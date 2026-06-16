@@ -116,7 +116,6 @@ class CallLogApi {
         "timestamp": DateTime.now().toIso8601String(),
         "initiated_time": initiatedTime.toIso8601String(),
         "end_time": endTime.toIso8601String(),
-        "from": fromNumber,
         "initiated_by": username,
         "doctype_reference": doctype,
         "docname_reference": docname,
@@ -131,6 +130,9 @@ class CallLogApi {
         "read_call_log_permission": permissionGranted ? 'GRANTED' : 'DENIED',
         "device_log_retrieval_attempt": retrievedAttempt,
       };
+      if (fromNumber.isNotEmpty) {
+        callDetails["from"] = fromNumber;
+      }
 
       final response = await http.post(
         Uri.parse("${AppConfig.baseUrl}/api/resource/Error%20Log"),
@@ -331,8 +333,7 @@ class CallLogDoctypeApi {
       // Calculate end_time = start_time + duration
       final endTime = startTime.add(Duration(seconds: durationSeconds));
 
-      final data = {
-        'from': fromNumber,
+      final data = <String, dynamic>{
         'to': mobileNo,
         'type': 'Outgoing',
         'start_time': startTime.toIso8601String(),
@@ -340,6 +341,10 @@ class CallLogDoctypeApi {
         'duration': durationSeconds,
         'status': erpStatus,
       };
+      // Only send 'from' if device number is available
+      if (fromNumber.isNotEmpty) {
+        data['from'] = fromNumber;
+      }
 
       final url = '${AppConfig.updateCallLogApi}/$callLogName';
       debugPrint('[CALL_LOG_DOCTYPE] PUT $url');
