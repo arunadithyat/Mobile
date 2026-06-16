@@ -10,9 +10,6 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:lead_calling/services/auto_dialer.dart';
 import 'package:lead_calling/api/call_log_api.dart';
-import 'package:lead_calling/screens/call_completion_dialog.dart';
-import 'package:lead_calling/screens/call_queue_screen.dart';
-import 'package:lead_calling/screens/webview_screen.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
