@@ -312,18 +312,40 @@ class CallLogDoctypeApi {
         return {'success': false, 'message': 'No session'};
       }
 
+      // Map app call status to ERPNext Call Log status values
+      String erpStatus;
+      switch (status.toLowerCase()) {
+        case 'connected':
+          erpStatus = 'Completed';
+        case 'missed':
+        case 'not answered':
+        case 'not connected':
+          erpStatus = 'No Answer';
+        case 'busy':
+          erpStatus = 'Busy';
+        case 'dropped':
+        case 'disconnected':
+          erpStatus = 'Failed';
+        case 'cancelled':
+        case 'canceled':
+          erpStatus = 'Canceled';
+        default:
+          erpStatus = 'Completed';
+      }
+
       final data = {
         'to': mobileNo,
+        'type': 'Outgoing',
         'start_time': startTime.toIso8601String(),
         'duration': durationSeconds,
-        'status': status,
+        'status': erpStatus,
       };
 
       debugPrint('[CALL_LOG_DOCTYPE] Posting to Call Log doctype...');
       debugPrint('[CALL_LOG_DOCTYPE] to: $mobileNo');
       debugPrint('[CALL_LOG_DOCTYPE] start_time: ${startTime.toIso8601String()}');
       debugPrint('[CALL_LOG_DOCTYPE] duration: $durationSeconds');
-      debugPrint('[CALL_LOG_DOCTYPE] status: $status');
+      debugPrint('[CALL_LOG_DOCTYPE] status: $status → $erpStatus');
 
       String url;
       http.Response response;

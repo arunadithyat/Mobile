@@ -26,7 +26,7 @@ class AppConfig {
 
   // Post-call: update the actual Call Log doctype in ERPNext
   static const String updateCallLogApi =
-      "$baseUrl/api/resource/Call Log";
+      "$baseUrl/api/resource/Call%20Log";
 
   // Fix #9: Pause interval options moved to config
   static const List<int> pauseIntervalOptions = [5, 15, 30];
