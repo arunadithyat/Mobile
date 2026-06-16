@@ -7,6 +7,21 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
 
 class LeadApi {
+  static Future<String> _getCsrfToken(String cookie) async {
+    try {
+      final response = await http.get(
+        Uri.parse("${AppConfig.baseUrl}/api/method/frappe.auth.get_csrf_token"),
+        headers: {'Cookie': cookie},
+      ).timeout(const Duration(seconds: 10));
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body)['message'] ?? '';
+      }
+      return '';
+    } catch (e) {
+      debugPrint("[CSRF] Error: $e");
+      return '';
+    }
+  }
   /// Fetches dropdown OPTIONS for Lead fields from /api/method/leadvalues
   static Future<Map<String, List<String>>> getFieldOptions() async {
     try {
@@ -103,6 +118,7 @@ class LeadApi {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
           'Cookie': cookie,
+          'X-Frappe-CSRF-Token': await _getCsrfToken(cookie),
         },
         body: body,
       ).timeout(const Duration(seconds: 10));
@@ -123,6 +139,21 @@ class LeadApi {
 }
 
 class OpportunityApi {
+  static Future<String> _getCsrfToken(String cookie) async {
+    try {
+      final response = await http.get(
+        Uri.parse("${AppConfig.baseUrl}/api/method/frappe.auth.get_csrf_token"),
+        headers: {'Cookie': cookie},
+      ).timeout(const Duration(seconds: 10));
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body)['message'] ?? '';
+      }
+      return '';
+    } catch (e) {
+      debugPrint("[CSRF] Error: $e");
+      return '';
+    }
+  }
   /// Fetches dropdown OPTIONS for Opportunity fields
   static Future<Map<String, List<String>>> getFieldOptions() async {
     try {
@@ -214,6 +245,7 @@ class OpportunityApi {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
           'Cookie': cookie,
+          'X-Frappe-CSRF-Token': await _getCsrfToken(cookie),
         },
         body: body,
       ).timeout(const Duration(seconds: 10));
