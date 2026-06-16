@@ -40,6 +40,14 @@ class AppConfig {
   static const String updateLeadApi =
       "$baseUrl/api/method/update_lead";
 
+  // Fetch Opportunity field options
+  static const String opportunityValuesApi =
+      "$baseUrl/api/method/opportunity_values";
+
+  // Update Opportunity fields
+  static const String updateOpportunityApi =
+      "$baseUrl/api/method/opportunity_update";
+
   // Update Lead status (RNR/Busy/etc.) after unanswered call
   static const String updateLeadRnrApi =
       "$baseUrl/api/method/update_lead_rnr_followup";

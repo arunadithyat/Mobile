@@ -5,7 +5,8 @@ import '../api/lead_api.dart';
 import '../services/auto_dialer.dart';
 
 class AnsweredCallDialog extends StatefulWidget {
-  final String leadName;
+  final String leadName;       // CRM-LEAD-xxx or empty
+  final String opportunityName; // CRM-OPP-xxx or empty
   final String callLogName;
   final String customerName;
   final String mobileNo;
@@ -21,7 +22,8 @@ class AnsweredCallDialog extends StatefulWidget {
 
   const AnsweredCallDialog({
     super.key,
-    required this.leadName,
+    this.leadName = '',
+    this.opportunityName = '',
     required this.callLogName,
     required this.customerName,
     required this.mobileNo,
@@ -36,6 +38,9 @@ class AnsweredCallDialog extends StatefulWidget {
     this.retrievedAttempt = -1,
   });
 
+  bool get isOpportunity => opportunityName.isNotEmpty && leadName.isEmpty;
+  String get referenceName => isOpportunity ? opportunityName : leadName;
+
   @override
   State<AnsweredCallDialog> createState() => _AnsweredCallDialogState();
 }
@@ -44,17 +49,28 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
   bool _loading = true;
   bool _isSubmitting = false;
 
-  // Current values (pre-populated from Lead)
+  // Shared fields
   String _status = '';
+  DateTime? _followUpDate;
+  final _commentsController = TextEditingController();
+
+  // Lead-specific fields
   String _customerCategory = '';
   String _customerType = '';
   String _district = '';
   String _cityTown = '';
-  DateTime? _followUpDate;
-  final _commentsController = TextEditingController();
 
-  // Dropdown options (from leadvalues API)
+  // Opportunity-specific fields
+  String _opportunityAmount = '';
+  final _amountController = TextEditingController();
+
+  // Dropdown options
   Map<String, List<String>> _options = {};
+
+  // Opportunity statuses that require mandatory follow-up date
+  static const _oppDateMandatoryStatuses = [
+    'Demo', 'Quotation', 'Prospect', 'Pipeline'
+  ];
 
   @override
   void initState() {
@@ -63,37 +79,48 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
   }
 
   Future<void> _fetchData() async {
-    // Fetch both in parallel
-    final results = await Future.wait([
-      LeadApi.getFieldOptions(),
-      LeadApi.getLeadCurrentValues(widget.leadName),
-    ]);
+    if (widget.isOpportunity) {
+      final results = await Future.wait([
+        OpportunityApi.getFieldOptions(),
+        OpportunityApi.getCurrentValues(widget.opportunityName),
+      ]);
+      final options = results[0] as Map<String, List<String>>;
+      final values = results[1] as Map<String, dynamic>;
 
-    final options = results[0] as Map<String, List<String>>;
-    final values = results[1] as Map<String, dynamic>;
+      if (!mounted) return;
+      setState(() {
+        _options = options;
+        _status = (values['status'] ?? '').toString();
+        _opportunityAmount = (values['opportunity_amount'] ?? '').toString();
+        _amountController.text = _opportunityAmount;
+        final followUp = (values['custom_next_followup_date1'] ?? '').toString();
+        if (followUp.isNotEmpty) _followUpDate = DateTime.tryParse(followUp);
+        _loading = false;
+      });
+    } else {
+      final results = await Future.wait([
+        LeadApi.getFieldOptions(),
+        LeadApi.getLeadCurrentValues(widget.leadName),
+      ]);
+      final options = results[0] as Map<String, List<String>>;
+      final values = results[1] as Map<String, dynamic>;
 
-    if (!mounted) return;
-
-    setState(() {
-      _options = options;
-
-      // Pre-populate with current values
-      _status = (values['status'] ?? '').toString();
-      _customerCategory = (values['custom_customer_category'] ?? '').toString();
-      _customerType = (values['custom_customer_type'] ?? '').toString();
-      _district = (values['custom_district'] ?? '').toString();
-      _cityTown = (values['custom_citytown'] ?? '').toString();
-
-      final followUp = (values['custom_next_followup_date1'] ?? '').toString();
-      if (followUp.isNotEmpty) _followUpDate = DateTime.tryParse(followUp);
-
-      _loading = false;
-    });
+      if (!mounted) return;
+      setState(() {
+        _options = options;
+        _status = (values['status'] ?? '').toString();
+        _customerCategory = (values['custom_customer_category'] ?? '').toString();
+        _customerType = (values['custom_customer_type'] ?? '').toString();
+        _district = (values['custom_district'] ?? '').toString();
+        _cityTown = (values['custom_citytown'] ?? '').toString();
+        final followUp = (values['custom_next_followup_date1'] ?? '').toString();
+        if (followUp.isNotEmpty) _followUpDate = DateTime.tryParse(followUp);
+        _loading = false;
+      });
+    }
   }
 
-  List<String> _getOptions(String fieldName) {
-    return _options[fieldName] ?? [];
-  }
+  List<String> _getOptions(String key) => _options[key] ?? [];
 
   Future<void> _pickFollowUpDate() async {
     final picked = await showDatePicker(
@@ -112,19 +139,27 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
     return '$m:${s.toString().padLeft(2, '0')} min';
   }
 
+  bool get _isFollowUpMandatory {
+    if (!widget.isOpportunity) return false;
+    return _oppDateMandatoryStatuses.contains(_status);
+  }
+
   Future<void> _submit() async {
     if (_status.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please select a status")),
-      );
+      _showSnack("Please select a status");
+      return;
+    }
+    if (_isFollowUpMandatory && _followUpDate == null) {
+      _showSnack("Follow-up date is required for $_status");
       return;
     }
 
     setState(() => _isSubmitting = true);
 
     try {
-      // 1. Update Call Log doctype
       final fromNumber = await AutoDialer.getOwnNumber();
+
+      // 1. Update Call Log doctype
       await CallLogDoctypeApi.updateCallLog(
         callLogName: widget.callLogName,
         mobileNo: widget.mobileNo,
@@ -134,7 +169,7 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
         attended: widget.attended,
       );
 
-      // 2. Update Error Log (existing flow)
+      // 2. Update Error Log
       await CallLogApi.updateCallLog(
         doctype: widget.doctype,
         docname: widget.docname,
@@ -152,77 +187,73 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
         retrievedAttempt: widget.retrievedAttempt,
       );
 
-      // 3. Update Lead fields
-      final leadFields = <String, dynamic>{
-        'status': _status,
-        'custom_customer_category': _customerCategory,
-        'custom_district': _district,
-        'custom_citytown': _cityTown,
-      };
+      // 3. Update Lead or Opportunity
+      Map<String, dynamic> result;
+      if (widget.isOpportunity) {
+        final fields = <String, dynamic>{
+          'status': _status,
+          'opportunity_amount': _amountController.text.trim(),
+        };
+        if (_followUpDate != null) {
+          fields['custom_next_followup_date1'] =
+              _followUpDate!.toIso8601String().split('T')[0];
+        }
+        final comments = _commentsController.text.trim();
+        if (comments.isNotEmpty) fields['comments'] = comments;
 
-      if (_customerCategory.isNotEmpty && _customerCategory != 'B2C') {
-        leadFields['custom_customer_type'] = _customerType;
+        result = await OpportunityApi.updateOpportunity(
+          oppName: widget.opportunityName,
+          fields: fields,
+        );
+      } else {
+        final fields = <String, dynamic>{
+          'status': _status,
+          'custom_customer_category': _customerCategory,
+          'custom_district': _district,
+          'custom_citytown': _cityTown,
+        };
+        if (_customerCategory.isNotEmpty && _customerCategory != 'B2C') {
+          fields['custom_customer_type'] = _customerType;
+        }
+        if (_followUpDate != null) {
+          fields['custom_next_followup_date1'] =
+              _followUpDate!.toIso8601String().split('T')[0];
+        }
+        final comments = _commentsController.text.trim();
+        if (comments.isNotEmpty) fields['comments'] = comments;
+
+        result = await LeadApi.updateLead(
+          leadName: widget.leadName,
+          fields: fields,
+        );
       }
-
-      if (_followUpDate != null) {
-        leadFields['custom_next_followup_date1'] =
-            _followUpDate!.toIso8601String().split('T')[0];
-      }
-
-      final comments = _commentsController.text.trim();
-      if (comments.isNotEmpty) {
-        leadFields['comments'] = comments;
-      }
-
-      final leadResult = await LeadApi.updateLead(
-        leadName: widget.leadName,
-        fields: leadFields,
-      );
 
       if (!mounted) return;
 
-      if (leadResult['success'] == true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("✅ Call logged & Lead updated"),
-            backgroundColor: Colors.green,
-          ),
-        );
+      final docLabel = widget.isOpportunity ? 'Opportunity' : 'Lead';
+      if (result['success'] == true) {
+        _showSnack("✅ Call logged & $docLabel updated", Colors.green);
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("⚠️ Call logged but Lead update failed: ${leadResult['message']}"),
-            backgroundColor: Colors.orange,
-          ),
-        );
+        _showSnack("⚠️ Call logged but $docLabel update failed", Colors.orange);
       }
 
       if (mounted) Navigator.pop(context);
     } catch (e) {
       debugPrint('[ANSWERED] Error: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("❌ Error: $e"), backgroundColor: Colors.red),
-        );
-      }
+      if (mounted) _showSnack("❌ Error: $e", Colors.red);
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
-  @override
-  void dispose() {
-    _commentsController.dispose();
-    super.dispose();
+  void _showSnack(String msg, [Color? bg]) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), backgroundColor: bg),
+    );
   }
 
-  Widget _buildDropdown(
-    String label,
-    String fieldKey,
-    String value,
-    ValueChanged<String> onChanged, {
-    bool visible = true,
-  }) {
+  Widget _buildDropdown(String label, String fieldKey, String value,
+      ValueChanged<String> onChanged, {bool visible = true}) {
     if (!visible) return const SizedBox.shrink();
     final options = _getOptions(fieldKey);
     final safeOptions = [...options];
@@ -235,34 +266,33 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label,
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+          Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
           const SizedBox(height: 6),
           DropdownButtonFormField<String>(
             value: value.isEmpty ? null : value,
             isExpanded: true,
             hint: Text("Select $label"),
             decoration: InputDecoration(
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
               filled: hasFill,
               fillColor: hasFill ? Colors.green.shade50 : null,
             ),
             items: safeOptions
-                .map((o) => DropdownMenuItem(
-                    value: o,
-                    child: Text(o, style: const TextStyle(fontSize: 14))))
+                .map((o) => DropdownMenuItem(value: o, child: Text(o, style: const TextStyle(fontSize: 14))))
                 .toList(),
-            onChanged: (v) {
-              if (v != null) onChanged(v);
-            },
+            onChanged: (v) { if (v != null) onChanged(v); },
           ),
         ],
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _commentsController.dispose();
+    _amountController.dispose();
+    super.dispose();
   }
 
   @override
@@ -274,11 +304,7 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
           padding: EdgeInsets.all(40),
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text("Loading lead data..."),
-            ],
+            children: [CircularProgressIndicator(), SizedBox(height: 16), Text("Loading data...")],
           ),
         ),
       );
@@ -300,9 +326,24 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
                   style: TextStyle(fontSize: 14, color: Colors.grey[600])),
               Text(widget.mobileNo,
                   style: TextStyle(fontSize: 13, color: Colors.grey[500])),
+              const SizedBox(height: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: widget.isOpportunity ? Colors.blue.shade50 : Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  widget.isOpportunity ? "Opportunity" : "Lead",
+                  style: TextStyle(
+                    fontSize: 11, fontWeight: FontWeight.w600,
+                    color: widget.isOpportunity ? Colors.blue : Colors.orange.shade800,
+                  ),
+                ),
+              ),
               const SizedBox(height: 12),
 
-              // Auto-captured info
+              // Auto-captured
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
@@ -315,49 +356,64 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
                     const Icon(Icons.timer, size: 18, color: Colors.blue),
                     const SizedBox(width: 8),
                     Text("Duration: ${_formatDuration(widget.callDuration)}",
-                        style: const TextStyle(
-                            fontSize: 14, fontWeight: FontWeight.w600)),
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
                     const Spacer(),
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 2),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                       decoration: BoxDecoration(
                         color: Colors.green.shade100,
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: const Text("Connected",
-                          style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.green)),
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.green)),
                     ),
                   ],
                 ),
               ),
               const SizedBox(height: 16),
 
-              // Dynamic dropdowns — options from leadvalues, values from Lead
-              _buildDropdown("Lead Status", "status", _status,
+              // Status dropdown
+              _buildDropdown("Status", "status", _status,
                   (v) => setState(() => _status = v)),
 
-              _buildDropdown("Customer Category", "custom_customer_category",
-                  _customerCategory,
-                  (v) => setState(() => _customerCategory = v)),
+              // --- Lead-specific fields ---
+              if (!widget.isOpportunity) ...[
+                _buildDropdown("Customer Category", "custom_customer_category",
+                    _customerCategory, (v) => setState(() => _customerCategory = v)),
+                _buildDropdown("Customer Type", "custom_customer_type",
+                    _customerType, (v) => setState(() => _customerType = v),
+                    visible: _customerCategory.isNotEmpty && _customerCategory != 'B2C'),
+                _buildDropdown("District", "custom_district", _district,
+                    (v) => setState(() => _district = v)),
+                _buildDropdown("City / Town", "custom_citytown", _cityTown,
+                    (v) => setState(() => _cityTown = v)),
+              ],
 
-              _buildDropdown(
-                "Customer Type",
-                "custom_customer_type",
-                _customerType,
-                (v) => setState(() => _customerType = v),
-                visible: _customerCategory.isNotEmpty &&
-                    _customerCategory != 'B2C',
-              ),
-
-              _buildDropdown("District", "custom_district", _district,
-                  (v) => setState(() => _district = v)),
-
-              _buildDropdown("City / Town", "custom_citytown", _cityTown,
-                  (v) => setState(() => _cityTown = v)),
+              // --- Opportunity-specific fields ---
+              if (widget.isOpportunity) ...[
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text("Opportunity Amount",
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 6),
+                      TextField(
+                        controller: _amountController,
+                        keyboardType: TextInputType.number,
+                        decoration: InputDecoration(
+                          hintText: "Enter amount",
+                          prefixText: "₹ ",
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                          filled: _amountController.text.isNotEmpty,
+                          fillColor: Colors.green.shade50,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
 
               // Follow-up date
               Padding(
@@ -365,27 +421,25 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text("Next Follow-up Date",
-                        style: TextStyle(
-                            fontSize: 13, fontWeight: FontWeight.w600)),
+                    Text(
+                      "Next Follow-up Date${_isFollowUpMandatory ? ' *' : ''}",
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                    ),
                     const SizedBox(height: 6),
                     InkWell(
                       onTap: _pickFollowUpDate,
                       child: Container(
                         width: double.infinity,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 12),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: Colors.grey.shade300),
-                          color: _followUpDate != null
-                              ? Colors.green.shade50
-                              : null,
+                          border: Border.all(color: _isFollowUpMandatory && _followUpDate == null
+                              ? Colors.red.shade300 : Colors.grey.shade300),
+                          color: _followUpDate != null ? Colors.green.shade50 : null,
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.calendar_today,
-                                size: 18, color: Colors.blue),
+                            const Icon(Icons.calendar_today, size: 18, color: Colors.blue),
                             const SizedBox(width: 10),
                             Text(
                               _followUpDate != null
@@ -393,9 +447,7 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
                                   : "Select date",
                               style: TextStyle(
                                 fontSize: 14,
-                                color: _followUpDate != null
-                                    ? Colors.black87
-                                    : Colors.grey,
+                                color: _followUpDate != null ? Colors.black87 : Colors.grey,
                               ),
                             ),
                           ],
@@ -410,8 +462,7 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
               const Align(
                 alignment: Alignment.centerLeft,
                 child: Text("Comments",
-                    style:
-                        TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
               ),
               const SizedBox(height: 6),
               TextField(
@@ -419,9 +470,7 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
                 maxLines: 2,
                 decoration: InputDecoration(
                   hintText: "Add notes about the call...",
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                 ),
               ),
               const SizedBox(height: 18),
@@ -435,17 +484,12 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
                     backgroundColor: const Color(0xFF1A73E8),
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
                   child: _isSubmitting
-                      ? const SizedBox(
-                          height: 18,
-                          width: 18,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white))
-                      : const Text("Submit",
-                          style: TextStyle(fontSize: 16)),
+                      ? const SizedBox(height: 18, width: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : const Text("Submit", style: TextStyle(fontSize: 16)),
                 ),
               ),
             ],

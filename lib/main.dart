@@ -1935,12 +1935,14 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
     )));
 
     final leadName = widget.data['lead']?.toString() ?? '';
+    final opportunityName = widget.data['opportunity']?.toString() ?? '';
 
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AnsweredCallDialog(
         leadName: leadName,
+        opportunityName: opportunityName,
         callLogName: callLogName,
         customerName: customerName,
         mobileNo: mobileNo,
@@ -1963,11 +1965,12 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
   /// The lead field from the queue data tells us which Lead to update.
   Future<void> _showUnansweredDialog() async {
     final leadName = widget.data['lead']?.toString() ?? '';
+    final opportunityName = widget.data['opportunity']?.toString() ?? '';
     final customerName = widget.data['customer_name']?.toString() ?? 'Unknown';
     final mobileNo = widget.data['mobile_no']?.toString() ?? '';
 
-    if (leadName.isEmpty) {
-      debugPrint('[RNR] No lead reference — skipping dialog');
+    if (leadName.isEmpty && opportunityName.isEmpty) {
+      debugPrint('[RNR] No lead/opportunity reference — skipping dialog');
       if (mounted) Navigator.pop(context, {'status': 'not_connected'});
       return;
     }
@@ -1977,6 +1980,7 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
       barrierDismissible: false,
       builder: (_) => UnansweredCallDialog(
         leadName: leadName,
+        opportunityName: opportunityName,
         customerName: customerName,
         mobileNo: mobileNo,
       ),

@@ -113,6 +113,7 @@ class NotificationService {
       'docname': rawDocname,
       'call_log_name': callLogName,
       'lead': rawLead,
+      'opportunity': (pick(['opportunity', 'opportunity_name']) ?? '').toString(),
       'customer_name':
           (pick(['customer_name', 'customerName', 'customer', 'lead_name']) ??
                   'Customer')

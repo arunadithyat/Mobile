@@ -1,10 +1,11 @@
 enum CallQueueStatus { pending, cancelled }
 
 class CallQueueItem {
-  final String callLogName; // Call Log document name (e.g. "CALL-0001") for post-call updates
+  final String callLogName;
   final String doctype;
   final String docname;
-  final String lead; // Lead/Opportunity reference (e.g. CRM-LEAD-2026-14403)
+  final String lead;         // e.g. CRM-LEAD-2026-14403 (empty if opportunity)
+  final String opportunity;  // e.g. CRM-OPP-2026-004 (empty if lead)
   final String customerName;
   final String mobileNo;
   final DateTime queuedAt;
@@ -17,6 +18,7 @@ class CallQueueItem {
     required this.doctype,
     required this.docname,
     this.lead = '',
+    this.opportunity = '',
     required this.customerName,
     required this.mobileNo,
     required this.queuedAt,
@@ -28,6 +30,18 @@ class CallQueueItem {
   bool get isCancelled => status == CallQueueStatus.cancelled;
   bool get isPending => status == CallQueueStatus.pending;
 
+  /// True if this is a Lead reference
+  bool get isLead => lead.isNotEmpty;
+
+  /// True if this is an Opportunity reference
+  bool get isOpportunity => opportunity.isNotEmpty && lead.isEmpty;
+
+  /// The reference document name (Lead or Opportunity)
+  String get referenceName => isOpportunity ? opportunity : lead;
+
+  /// The reference doctype name
+  String get referenceDoctype => isOpportunity ? 'Opportunity' : 'Lead';
+
   Map<String, dynamic> toMap() {
     return {
       'type': 'NEW_LEAD_CALL',
@@ -35,6 +49,7 @@ class CallQueueItem {
       'doctype': doctype,
       'docname': docname,
       'lead': lead,
+      'opportunity': opportunity,
       'customer_name': customerName,
       'mobile_no': mobileNo,
       'auto_call': autoCall,
@@ -44,21 +59,18 @@ class CallQueueItem {
     };
   }
 
-  /// Handles both FCM payload format and API (get_pending_calls) format:
-  ///   FCM:  { doctype, docname, customer_name, mobile_no }
-  ///   API:  { name, reference_doctype, reference_docname, customer_name, mobile_no, creation }
   factory CallQueueItem.fromMap(Map<String, dynamic> data) {
     final doctype = (data['doctype'] ?? data['reference_doctype'] ?? '').toString();
     final docname = (data['docname'] ?? data['reference_docname'] ?? '').toString();
 
     return CallQueueItem(
-      // callLogName: from API 'name', FCM 'call_log_name', or docname when doctype is Call Log
       callLogName: (data['name'] ?? data['call_log_name'] ??
               (doctype == 'Call Log' ? docname : '') ?? '')
           .toString(),
       doctype: doctype,
       docname: docname,
-      lead: (data['lead'] ?? data['lead_name'] ?? data['reference_docname'] ?? '').toString(),
+      lead: (data['lead'] ?? data['lead_name'] ?? '').toString(),
+      opportunity: (data['opportunity'] ?? data['opportunity_name'] ?? '').toString(),
       customerName: data['customer_name'] ?? '',
       mobileNo: data['mobile_no'] ?? '',
       queuedAt: _parseDateTime(data),
@@ -83,11 +95,11 @@ class CallQueueItem {
 
   String get formattedTime => queuedAt.toString().split('.')[0];
 
-  /// Category from payload, else derived from doctype.
   static String _resolveCategory(Map<String, dynamic> data, String doctype) {
     final explicit =
         (data['category'] ?? data['lead_category'] ?? '').toString().trim();
     if (explicit.isNotEmpty) return explicit;
+    if ((data['opportunity'] ?? '').toString().isNotEmpty) return 'Followup Leads';
     switch (doctype) {
       case 'Lead':
         return 'Hot Leads';
@@ -109,25 +121,17 @@ class CallQueue {
     _queue.add(item);
   }
 
-  void addItem(CallQueueItem item) {
-    _queue.add(item);
-  }
+  void addItem(CallQueueItem item) { _queue.add(item); }
 
   CallQueueItem? removeFirst() {
-    if (_queue.isNotEmpty) {
-      return _queue.removeAt(0);
-    }
+    if (_queue.isNotEmpty) return _queue.removeAt(0);
     return null;
   }
 
   void remove(int index) {
-    if (index >= 0 && index < _queue.length) {
-      _queue.removeAt(index);
-    }
+    if (index >= 0 && index < _queue.length) _queue.removeAt(index);
   }
 
-  /// Moves a call to the end of the queue (e.g. after cancel —
-  /// customer not ready, so the team calls the next one first).
   void moveToEnd(int index) {
     if (index >= 0 && index < _queue.length) {
       final item = _queue.removeAt(index);
@@ -135,41 +139,26 @@ class CallQueue {
     }
   }
 
-  /// Returns true if a call for the same document + mobile number
-  /// is already sitting in the queue (any status).
   bool containsCall(String docname, String mobileNo) {
-    return _queue.any(
-      (item) => item.docname == docname && item.mobileNo == mobileNo,
-    );
+    return _queue.any((item) => item.docname == docname && item.mobileNo == mobileNo);
   }
 
   CallQueueItem? get(int index) {
-    if (index >= 0 && index < _queue.length) {
-      return _queue[index];
-    }
+    if (index >= 0 && index < _queue.length) return _queue[index];
     return null;
   }
 
   List<CallQueueItem> getAll() => List.from(_queue);
-
   int get length => _queue.length;
-
   bool get isEmpty => _queue.isEmpty;
-
   bool get isNotEmpty => _queue.isNotEmpty;
 
-  /// Marks a call as cancelled but keeps it in the same position
   void markCancelled(int index) {
-    if (index >= 0 && index < _queue.length) {
-      _queue[index].status = CallQueueStatus.cancelled;
-    }
+    if (index >= 0 && index < _queue.length) _queue[index].status = CallQueueStatus.cancelled;
   }
 
-  /// Restores a cancelled call back to pending
   void restorePending(int index) {
-    if (index >= 0 && index < _queue.length) {
-      _queue[index].status = CallQueueStatus.pending;
-    }
+    if (index >= 0 && index < _queue.length) _queue[index].status = CallQueueStatus.pending;
   }
 
   int get pendingCount => _queue.where((i) => i.isPending).length;
@@ -182,11 +171,6 @@ class CallQueue {
     _queue.insert(newIndex, item);
   }
 
-  void clear() {
-    _queue.clear();
-  }
-
-  void clearAll() {
-    _queue.clear();
-  }
+  void clear() { _queue.clear(); }
+  void clearAll() { _queue.clear(); }
 }
