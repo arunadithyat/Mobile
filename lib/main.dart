@@ -24,6 +24,7 @@ import 'models/call_queue.dart';
 import 'services/call_history_storage.dart';
 import 'screens/call_history_tab.dart';
 import 'screens/chatbot_screen.dart';
+import 'screens/answered_call_dialog.dart';
 import 'screens/unanswered_call_dialog.dart';
 import 'services/message_service.dart';
 
@@ -1933,20 +1934,22 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
       calledAt: _initiatedAt ?? DateTime.now(),
     )));
 
+    final leadName = widget.data['lead']?.toString() ?? '';
+
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => CallCompletionDialog(
-        doctype: doctype,
-        docname: docname,
+      builder: (ctx) => AnsweredCallDialog(
+        leadName: leadName,
+        callLogName: callLogName,
         customerName: customerName,
         mobileNo: mobileNo,
-        callLogName: callLogName,
+        doctype: doctype,
+        docname: docname,
         callDuration: duration,
         initiatedTime: _initiatedAt ?? DateTime.now(),
-        initialCallStatus: callStatus,
-        initialDisconnectedStatus: disconnectedStatus,
-        initialAttended: attended,
+        callStatus: callStatus ?? 'Connected',
+        attended: attended ?? true,
         dataSource: dataSource,
         permissionGranted: permissionGranted,
         retrievedAttempt: retrievedAttempt,

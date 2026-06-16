@@ -32,6 +32,14 @@ class AppConfig {
   static const String createIncomingCallLogApi =
       "$baseUrl/api/method/calllog";
 
+  // Fetch current Lead field values
+  static const String leadValuesApi =
+      "$baseUrl/api/method/leadvalues";
+
+  // Update Lead fields after answered call
+  static const String updateLeadApi =
+      "$baseUrl/api/method/update_lead";
+
   // Update Lead status (RNR/Busy/etc.) after unanswered call
   static const String updateLeadRnrApi =
       "$baseUrl/api/method/update_lead_rnr_followup";
