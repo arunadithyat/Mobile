@@ -8,6 +8,7 @@ class CallQueueItem {
   final String opportunity;  // e.g. CRM-OPP-2026-004 (empty if lead)
   final String customerName;
   final String mobileNo;
+  final String productEnquired; // custom_product_enquired
   final DateTime queuedAt;
   final String autoCall;
   final String category;
@@ -21,6 +22,7 @@ class CallQueueItem {
     this.opportunity = '',
     required this.customerName,
     required this.mobileNo,
+    this.productEnquired = '',
     required this.queuedAt,
     this.autoCall = "1",
     this.category = "Hot Leads",
@@ -52,6 +54,7 @@ class CallQueueItem {
       'opportunity': opportunity,
       'customer_name': customerName,
       'mobile_no': mobileNo,
+      'product_enquired': productEnquired,
       'auto_call': autoCall,
       'category': category,
       'queued_at': queuedAt.toIso8601String(),
@@ -73,6 +76,7 @@ class CallQueueItem {
       opportunity: (data['opportunity'] ?? data['opportunity_name'] ?? '').toString(),
       customerName: data['customer_name'] ?? '',
       mobileNo: data['mobile_no'] ?? '',
+      productEnquired: (data['product_enquired'] ?? data['custom_product_enquired'] ?? '').toString(),
       queuedAt: _parseDateTime(data),
       autoCall: data['auto_call'] ?? '1',
       category: _resolveCategory(data, doctype),
