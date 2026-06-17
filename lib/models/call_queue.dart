@@ -103,7 +103,13 @@ class CallQueueItem {
     final explicit =
         (data['category'] ?? data['lead_category'] ?? '').toString().trim();
     if (explicit.isNotEmpty) return explicit;
-    if ((data['opportunity'] ?? '').toString().isNotEmpty) return 'Followup Leads';
+    // Check reference fields for Call Log items
+    if ((data['opportunity'] ?? data['opportunity_name'] ?? '').toString().isNotEmpty) {
+      return 'Order Followups';
+    }
+    if ((data['lead'] ?? data['lead_name'] ?? '').toString().isNotEmpty) {
+      return 'Hot Leads';
+    }
     switch (doctype) {
       case 'Lead':
         return 'Hot Leads';
@@ -112,7 +118,7 @@ class CallQueueItem {
       case 'Sales Order':
         return 'Order Followups';
       default:
-        return 'B2B Followups';
+        return 'Hot Leads';
     }
   }
 }

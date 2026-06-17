@@ -154,7 +154,9 @@ class _UnansweredCallDialogState extends State<UnansweredCallDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
+    return PopScope(
+      canPop: false,
+      child: Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: SingleChildScrollView(
         child: Padding(
@@ -400,6 +402,6 @@ class _UnansweredCallDialogState extends State<UnansweredCallDialog> {
           ),
         ),
       ),
-    );
+    ));
   }
 }

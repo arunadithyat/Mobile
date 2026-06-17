@@ -344,7 +344,9 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return Dialog(
+      return PopScope(
+        canPop: false,
+        child: Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         child: const Padding(
           padding: EdgeInsets.all(40),
@@ -353,10 +355,12 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
             children: [CircularProgressIndicator(), SizedBox(height: 16), Text("Loading data...")],
           ),
         ),
-      );
+      ));
     }
 
-    return Dialog(
+    return PopScope(
+      canPop: false,
+      child: Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: SingleChildScrollView(
         child: Padding(
@@ -618,6 +622,6 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
           ),
         ),
       ),
-    );
+    ));
   }
 }

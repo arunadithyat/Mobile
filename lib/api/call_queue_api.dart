@@ -8,20 +8,17 @@ import '../config.dart';
 import '../models/call_queue.dart';
 
 class CallQueueApi {
-  /// Fetches pending calls from the READ-only API endpoint.
-  /// Response format: { message: { calls: [...] } }
-  /// This endpoint does NOT send FCM — it only returns data.
+  /// Fetches pending calls from the API endpoint.
+  /// Supports both old format (calls/sent_payloads) and new categorized format.
   static Future<List<CallQueueItem>> fetchCallQueue() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final cookie = prefs.getString("cookie") ?? "";
 
       if (cookie.isEmpty) {
-        debugPrint('[QUEUE_API] ❌ No session — skipping fetch');
+        debugPrint('[QUEUE_API] No session — skipping fetch');
         return [];
       }
-
-      debugPrint('[QUEUE_API] Fetching from ${AppConfig.callQueueApi}...');
 
       final response = await http.get(
         Uri.parse(AppConfig.callQueueApi),
@@ -31,59 +28,91 @@ class CallQueueApi {
         },
       ).timeout(const Duration(seconds: 10));
 
-      debugPrint('[QUEUE_API] Status: ${response.statusCode}');
-
       if (response.statusCode != 200) {
-        debugPrint('[QUEUE_API] ❌ HTTP ${response.statusCode}');
+        debugPrint('[QUEUE_API] HTTP ${response.statusCode}');
         return [];
       }
 
       final jsonData = jsonDecode(response.body);
-      List<dynamic> callList = [];
+      if (jsonData is! Map<String, dynamic>) return [];
 
-      if (jsonData is Map<String, dynamic>) {
-        final message = jsonData['message'];
-
-        if (message is Map<String, dynamic>) {
-          // Primary format: { message: { calls: [...] } }
-          if (message['calls'] is List) {
-            callList = message['calls'] as List;
-          }
-          // Fallback: { message: { sent_payloads: [...] } }
-          else if (message['sent_payloads'] is List) {
-            callList = message['sent_payloads'] as List;
-          }
-        }
-        // Fallback: { message: [...] }
-        else if (message is List) {
-          callList = message;
-        }
-      }
+      final message = jsonData['message'];
+      if (message == null) return [];
 
       final items = <CallQueueItem>[];
       final seen = <String>{};
 
-      for (final entry in callList) {
-        if (entry is! Map<String, dynamic>) continue;
+      // New categorized format
+      if (message is Map<String, dynamic>) {
+        const categoryMap = {
+          'pending_calls': 'Hot Leads',
+          'lead_followup_calls': 'Followup Leads',
+          'opportunity_followup_calls': 'Order Followups',
+          'b2b_calls': 'B2B Followups',
+        };
 
-        // Support both field name formats
-        final docname = (entry['docname'] ?? entry['reference_docname'] ?? '').toString();
-        final mobileNo = (entry['mobile_no'] ?? '').toString();
-        if (docname.isEmpty || mobileNo.isEmpty) continue;
+        bool foundCategorized = false;
+        for (final entry in categoryMap.entries) {
+          final list = message[entry.key];
+          if (list is List && list.isNotEmpty) {
+            foundCategorized = true;
+            for (final item in list) {
+              if (item is! Map<String, dynamic>) continue;
+              final parsed = _parseItem(item, seen, overrideCategory: entry.value);
+              if (parsed != null) items.add(parsed);
+            }
+          }
+        }
 
-        // Dedup by docname + mobile
-        final key = '$docname|$mobileNo';
-        if (seen.contains(key)) continue;
-        seen.add(key);
-
-        items.add(CallQueueItem.fromMap(entry));
+        // Fallback: old format (calls / sent_payloads)
+        if (!foundCategorized) {
+          List<dynamic> callList = [];
+          if (message['calls'] is List) {
+            callList = message['calls'] as List;
+          } else if (message['sent_payloads'] is List) {
+            callList = message['sent_payloads'] as List;
+          }
+          for (final item in callList) {
+            if (item is! Map<String, dynamic>) continue;
+            final parsed = _parseItem(item, seen);
+            if (parsed != null) items.add(parsed);
+          }
+        }
+      }
+      // Fallback: message is a List directly
+      else if (message is List) {
+        for (final item in message) {
+          if (item is! Map<String, dynamic>) continue;
+          final parsed = _parseItem(item, seen);
+          if (parsed != null) items.add(parsed);
+        }
       }
 
-      debugPrint('[QUEUE_API] ✅ ${items.length} pending call(s) loaded');
+      debugPrint('[QUEUE_API] ✅ ${items.length} call(s) loaded');
       return items;
     } catch (e) {
-      debugPrint('[QUEUE_API] ❌ Error: $e');
+      debugPrint('[QUEUE_API] Error: $e');
       return [];
     }
+  }
+
+  static CallQueueItem? _parseItem(
+    Map<String, dynamic> entry,
+    Set<String> seen, {
+    String? overrideCategory,
+  }) {
+    final docname = (entry['docname'] ?? entry['reference_docname'] ?? '').toString();
+    final mobileNo = (entry['mobile_no'] ?? '').toString();
+    if (docname.isEmpty || mobileNo.isEmpty) return null;
+
+    final key = '$docname|$mobileNo';
+    if (seen.contains(key)) return null;
+    seen.add(key);
+
+    if (overrideCategory != null) {
+      entry['category'] = overrideCategory;
+    }
+
+    return CallQueueItem.fromMap(entry);
   }
 }
