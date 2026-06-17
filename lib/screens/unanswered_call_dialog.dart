@@ -115,6 +115,7 @@ class _UnansweredCallDialogState extends State<UnansweredCallDialog> {
               ? _followUpDate!.toIso8601String().split('T')[0]
               : DateTime.now().toIso8601String().split('T')[0],
           comments: fullComment,
+          junkReason: _status == 'Junk' ? _junkReason : '',
         );
       }
 
