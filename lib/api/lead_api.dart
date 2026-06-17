@@ -199,7 +199,7 @@ class OpportunityApi {
       debugPrint('[OPP_API] Fetching current values for: $oppName');
 
       final fields = Uri.encodeComponent(jsonEncode([
-        "status", "opportunity_amount", "custom_next_followup_date1"
+        "status", "opportunity_amount", "custom_next_followup_date1", "expected_closing"
       ]));
       final url = '${AppConfig.baseUrl}/api/resource/Opportunity/$oppName?fields=$fields';
 

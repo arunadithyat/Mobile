@@ -150,7 +150,28 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
       return;
     }
     if (_isFollowUpMandatory && _followUpDate == null) {
-      _showSnack("Follow-up date is required for $_status");
+      _showSnack("Follow-up date is required");
+      return;
+    }
+
+    if (_isExpectedClosingMandatory && _expectedClosing == null) {
+      _showSnack("Expected closing date is required for $_status");
+      return;
+    }
+
+    if (_isNotInterested && _reasonForNotInterested.isEmpty) {
+      _showSnack("Reason for Not Interested is required");
+      return;
+    }
+
+    if (widget.isOpportunity && !_isNotInterested && _amountController.text.trim().isEmpty) {
+      _showSnack("Opportunity amount is required");
+      return;
+    }
+
+    final comments = _commentsController.text.trim();
+    if (widget.isOpportunity && comments.isEmpty) {
+      _showSnack("Comments are mandatory");
       return;
     }
 
@@ -192,11 +213,20 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
       if (widget.isOpportunity) {
         final fields = <String, dynamic>{
           'status': _status,
-          'opportunity_amount': _amountController.text.trim(),
         };
-        if (_followUpDate != null) {
+        if (!_isNotInterested) {
+          fields['opportunity_amount'] = _amountController.text.trim();
+        }
+        if (_followUpDate != null && !_isNotInterested) {
           fields['custom_next_followup_date1'] =
               _followUpDate!.toIso8601String().split('T')[0];
+        }
+        if (_expectedClosing != null) {
+          fields['expected_closing'] =
+              _expectedClosing!.toIso8601String().split('T')[0];
+        }
+        if (_isNotInterested && _reasonForNotInterested.isNotEmpty) {
+          fields['custom_reason_for_not_interested'] = _reasonForNotInterested;
         }
         final comments = _commentsController.text.trim();
         if (comments.isNotEmpty) fields['comments'] = comments;
@@ -390,7 +420,7 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
               ],
 
               // --- Opportunity-specific fields ---
-              if (widget.isOpportunity) ...[
+              if (widget.isOpportunity && !_isNotInterested) ...[
                 Padding(
                   padding: const EdgeInsets.only(bottom: 14),
                   child: Column(
@@ -401,7 +431,10 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
                       const SizedBox(height: 6),
                       TextField(
                         controller: _amountController,
-                        keyboardType: TextInputType.number,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        inputFormatters: [
+                          FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+                        ],
                         decoration: InputDecoration(
                           hintText: "Enter amount",
                           prefixText: "₹ ",
@@ -415,8 +448,81 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
                 ),
               ],
 
-              // Follow-up date
-              Padding(
+              // Expected Closing Date (Prospect/Pipeline)
+              if (_isExpectedClosingMandatory)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text("Expected Closing Date *",
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 6),
+                      InkWell(
+                        onTap: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: _expectedClosing ?? DateTime.now().add(const Duration(days: 30)),
+                            firstDate: DateTime.now(),
+                            lastDate: DateTime.now().add(const Duration(days: 730)),
+                          );
+                          if (picked != null) setState(() => _expectedClosing = picked);
+                        },
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: _expectedClosing == null ? Colors.red.shade300 : Colors.grey.shade300),
+                            color: _expectedClosing != null ? Colors.green.shade50 : null,
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.event, size: 18, color: Colors.purple),
+                              const SizedBox(width: 10),
+                              Text(
+                                _expectedClosing != null
+                                    ? "${_expectedClosing!.day.toString().padLeft(2, '0')}-${_expectedClosing!.month.toString().padLeft(2, '0')}-${_expectedClosing!.year}"
+                                    : "Select date",
+                                style: TextStyle(fontSize: 14, color: _expectedClosing != null ? Colors.black87 : Colors.grey),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+              // Reason for Not Interested
+              if (_isNotInterested)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text("Reason for Not Interested *",
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 6),
+                      DropdownButtonFormField<String>(
+                        value: _reasonForNotInterested.isEmpty ? null : _reasonForNotInterested,
+                        isExpanded: true,
+                        hint: const Text("Select reason"),
+                        decoration: InputDecoration(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        items: _notInterestedReasons
+                            .map((o) => DropdownMenuItem(value: o, child: Text(o, style: const TextStyle(fontSize: 14))))
+                            .toList(),
+                        onChanged: (v) { if (v != null) setState(() => _reasonForNotInterested = v); },
+                      ),
+                    ],
+                  ),
+                ),
+
+              // Follow-up date (hidden for Not Interested)
+              if (!_isNotInterested) Padding(
                 padding: const EdgeInsets.only(bottom: 14),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
