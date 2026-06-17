@@ -396,7 +396,7 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text("Opportunity Amount",
+                      const Text("Opportunity Amount *",
                           style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                       const SizedBox(height: 6),
                       TextField(
@@ -459,10 +459,10 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
               ),
 
               // Comments
-              const Align(
+              Align(
                 alignment: Alignment.centerLeft,
-                child: Text("Comments",
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                child: Text("Comments${widget.isOpportunity ? ' *' : ''}",
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
               ),
               const SizedBox(height: 6),
               TextField(
