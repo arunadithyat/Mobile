@@ -32,6 +32,18 @@ Future<bool> launchPhoneCall(String phoneNumber) async {
   return await AutoDialer.openDialer(phoneNumber);
 }
 
+Future<void> savePendingDialog(Map<String, dynamic> data) async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setString('pending_dialog', jsonEncode(data));
+  debugPrint("[DIALOG] Saved pending dialog state");
+}
+
+Future<void> clearPendingDialog() async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.remove('pending_dialog');
+  debugPrint("[DIALOG] Cleared pending dialog state");
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
@@ -468,18 +480,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return digits.length >= 10 ? digits.substring(digits.length - 10) : digits;
   }
 
-  Future<void> _savePendingDialog(Map<String, dynamic> data) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('pending_dialog', jsonEncode(data));
-    debugPrint("[DIALOG] Saved pending dialog state");
-  }
-
-  Future<void> _clearPendingDialog() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('pending_dialog');
-    debugPrint("[DIALOG] Cleared pending dialog state");
-  }
-
   Future<void> _restorePendingDialog() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString('pending_dialog');
@@ -509,7 +509,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             callStatus: data['call_status'] ?? 'Connected',
             attended: true,
           ),
-        ).then((_) => _clearPendingDialog());
+        ).then((_) => clearPendingDialog());
       } else if (dialogType == 'unanswered') {
         showDialog(
           context: context,
@@ -520,7 +520,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             customerName: data['customer_name'] ?? 'Unknown',
             mobileNo: data['mobile_no'] ?? '',
           ),
-        ).then((_) => _clearPendingDialog());
+        ).then((_) => clearPendingDialog());
       }
     } catch (e) {
       debugPrint("[DIALOG] Error restoring: $e");
@@ -2057,7 +2057,7 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
     final opportunityName = widget.data['opportunity']?.toString() ?? '';
 
     // Persist dialog state so it survives app kills
-    _savePendingDialog({
+    savePendingDialog({
       'dialog_type': 'answered',
       'lead': leadName,
       'opportunity': opportunityName,
@@ -2091,7 +2091,7 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
         retrievedAttempt: retrievedAttempt,
       ),
     ).then((_) {
-      _clearPendingDialog();
+      clearPendingDialog();
       if (mounted) Navigator.pop(context);
     });
   }
@@ -2111,7 +2111,7 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
     }
 
     // Persist dialog state so it survives app kills
-    _savePendingDialog({
+    savePendingDialog({
       'dialog_type': 'unanswered',
       'lead': leadName,
       'opportunity': opportunityName,
@@ -2130,7 +2130,7 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
       ),
     );
 
-    await _clearPendingDialog();
+    await clearPendingDialog();
 
     if (mounted) {
       Navigator.pop(context, {'status': 'not_connected', ...?result});
