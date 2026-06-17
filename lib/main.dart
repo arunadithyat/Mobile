@@ -1276,6 +1276,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   ];
 
   int _categoryCount(String category) {
+    // Count from local queue (already categorized from API)
+    final queueCount = callQueue.getAll().where((c) => c.category == category).length;
+    if (queueCount > 0) return queueCount;
+
+    // Fallback to KPI API counts
     switch (category) {
       case 'Hot Leads':
         return _kpiCounts['pending_count'] ?? 0;
