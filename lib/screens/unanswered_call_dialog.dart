@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api/call_log_api.dart';
+import '../api/lead_api.dart';
 
 class UnansweredCallDialog extends StatefulWidget {
   final String leadName;
@@ -25,9 +26,11 @@ class UnansweredCallDialog extends StatefulWidget {
 class _UnansweredCallDialogState extends State<UnansweredCallDialog> {
   String _status = 'RNR';
   String _rnrReason = 'Ringing No Response';
+  String _junkReason = '';
   DateTime? _followUpDate;
   final _commentsController = TextEditingController();
   bool _isSubmitting = false;
+  bool _loading = true;
 
   static const List<String> _statusOptions = ['RNR', 'Junk'];
 
@@ -38,6 +41,24 @@ class _UnansweredCallDialogState extends State<UnansweredCallDialog> {
     {'label': 'Not Reachable', 'icon': Icons.signal_cellular_off},
     {'label': 'Busy', 'icon': Icons.phone_locked},
   ];
+
+  List<String> _junkReasonOptions = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchOptions();
+  }
+
+  Future<void> _fetchOptions() async {
+    final options = await LeadApi.getFieldOptions();
+    if (!mounted) return;
+    setState(() {
+      _junkReasonOptions = options['custom_reason_for_junk'] ?? [];
+      if (_junkReasonOptions.isNotEmpty) _junkReason = _junkReasonOptions.first;
+      _loading = false;
+    });
+  }
 
   Future<void> _pickFollowUpDate() async {
     final picked = await showDatePicker(
@@ -52,19 +73,29 @@ class _UnansweredCallDialogState extends State<UnansweredCallDialog> {
   Future<void> _submit() async {
     // Validate follow-up date for RNR
     if (_status == 'RNR' && _followUpDate == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Follow-up date is required for RNR")),
-      );
+      _showSnack("Follow-up date is required for RNR");
+      return;
+    }
+
+    // Validate junk reason
+    if (_status == 'Junk' && _junkReason.isEmpty) {
+      _showSnack("Please select a reason for Junk");
+      return;
+    }
+
+    // Validate comments (mandatory)
+    final comments = _commentsController.text.trim();
+    if (comments.isEmpty) {
+      _showSnack("Comments are mandatory");
       return;
     }
 
     setState(() => _isSubmitting = true);
 
     try {
-      final comments = _commentsController.text.trim();
       final fullComment = _status == 'RNR'
-          ? '[$_rnrReason] ${comments.isEmpty ? "Call not connected" : comments}'
-          : '[Junk] ${comments.isEmpty ? "Marked as junk" : comments}';
+          ? '[$_rnrReason] $comments'
+          : '[Junk - $_junkReason] $comments';
 
       Map<String, dynamic> result;
       if (widget.isOpportunity) {
@@ -98,23 +129,20 @@ class _UnansweredCallDialogState extends State<UnansweredCallDialog> {
         );
         Navigator.pop(context, {'status': 'updated', 'lead_status': _status});
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("❌ ${result['message']}"),
-            backgroundColor: Colors.red,
-          ),
-        );
+        _showSnack("❌ ${result['message']}", Colors.red);
       }
     } catch (e) {
       debugPrint('[RNR_UPDATE] Error: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("❌ Error: $e"), backgroundColor: Colors.red),
-        );
-      }
+      if (mounted) _showSnack("❌ Error: $e", Colors.red);
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
+  }
+
+  void _showSnack(String msg, [Color? bg]) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), backgroundColor: bg),
+    );
   }
 
   @override
@@ -156,7 +184,9 @@ class _UnansweredCallDialogState extends State<UnansweredCallDialog> {
                   final color = s == 'RNR' ? Colors.orange : Colors.red;
                   return Expanded(
                     child: Padding(
-                      padding: EdgeInsets.only(right: s == 'RNR' ? 6 : 0, left: s == 'Junk' ? 6 : 0),
+                      padding: EdgeInsets.only(
+                          right: s == 'RNR' ? 6 : 0,
+                          left: s == 'Junk' ? 6 : 0),
                       child: InkWell(
                         onTap: () => setState(() => _status = s),
                         borderRadius: BorderRadius.circular(10),
@@ -164,7 +194,9 @@ class _UnansweredCallDialogState extends State<UnansweredCallDialog> {
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(10),
-                            color: selected ? color.withValues(alpha: 0.1) : null,
+                            color: selected
+                                ? color.withValues(alpha: 0.1)
+                                : null,
                             border: Border.all(
                               color: selected ? color : Colors.grey.shade300,
                               width: selected ? 2 : 1,
@@ -191,7 +223,8 @@ class _UnansweredCallDialogState extends State<UnansweredCallDialog> {
                 const Align(
                   alignment: Alignment.centerLeft,
                   child: Text("Reason",
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                      style: TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.w600)),
                 ),
                 const SizedBox(height: 8),
                 Wrap(
@@ -204,12 +237,16 @@ class _UnansweredCallDialogState extends State<UnansweredCallDialog> {
                       onTap: () => setState(() => _rnrReason = label),
                       borderRadius: BorderRadius.circular(20),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(20),
-                          color: selected ? Colors.orange.withValues(alpha: 0.1) : null,
+                          color: selected
+                              ? Colors.orange.withValues(alpha: 0.1)
+                              : null,
                           border: Border.all(
-                            color: selected ? Colors.orange : Colors.grey.shade300,
+                            color:
+                                selected ? Colors.orange : Colors.grey.shade300,
                             width: selected ? 1.5 : 1,
                           ),
                         ),
@@ -218,13 +255,18 @@ class _UnansweredCallDialogState extends State<UnansweredCallDialog> {
                           children: [
                             Icon(r['icon'] as IconData,
                                 size: 16,
-                                color: selected ? Colors.orange : Colors.grey),
+                                color:
+                                    selected ? Colors.orange : Colors.grey),
                             const SizedBox(width: 6),
                             Text(label,
                                 style: TextStyle(
                                   fontSize: 12,
-                                  fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-                                  color: selected ? Colors.orange.shade800 : Colors.grey[700],
+                                  fontWeight: selected
+                                      ? FontWeight.w600
+                                      : FontWeight.normal,
+                                  color: selected
+                                      ? Colors.orange.shade800
+                                      : Colors.grey[700],
                                 )),
                           ],
                         ),
@@ -238,21 +280,24 @@ class _UnansweredCallDialogState extends State<UnansweredCallDialog> {
                 const Align(
                   alignment: Alignment.centerLeft,
                   child: Text("Next Follow-up Date *",
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                      style: TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.w600)),
                 ),
                 const SizedBox(height: 8),
                 InkWell(
                   onTap: _pickFollowUpDate,
                   child: Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 12),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: Colors.grey.shade300),
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.calendar_today, size: 18, color: Colors.blue),
+                        const Icon(Icons.calendar_today,
+                            size: 18, color: Colors.blue),
                         const SizedBox(width: 10),
                         Text(
                           _followUpDate != null
@@ -260,7 +305,9 @@ class _UnansweredCallDialogState extends State<UnansweredCallDialog> {
                               : "Select date",
                           style: TextStyle(
                             fontSize: 14,
-                            color: _followUpDate != null ? Colors.black87 : Colors.grey,
+                            color: _followUpDate != null
+                                ? Colors.black87
+                                : Colors.grey,
                           ),
                         ),
                       ],
@@ -270,18 +317,55 @@ class _UnansweredCallDialogState extends State<UnansweredCallDialog> {
                 const SizedBox(height: 16),
               ],
 
-              // Comments
+              // Junk reason (only when Junk selected)
+              if (_status == 'Junk') ...[
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text("Reason for Junk *",
+                      style: TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.w600)),
+                ),
+                const SizedBox(height: 8),
+                if (_loading)
+                  const Center(child: CircularProgressIndicator())
+                else
+                  DropdownButtonFormField<String>(
+                    value: _junkReason.isEmpty ? null : _junkReason,
+                    isExpanded: true,
+                    hint: const Text("Select reason"),
+                    decoration: InputDecoration(
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 10),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    items: _junkReasonOptions
+                        .map((o) => DropdownMenuItem(
+                            value: o,
+                            child:
+                                Text(o, style: const TextStyle(fontSize: 14))))
+                        .toList(),
+                    onChanged: (v) {
+                      if (v != null) setState(() => _junkReason = v);
+                    },
+                  ),
+                const SizedBox(height: 16),
+              ],
+
+              // Comments (mandatory)
               const Align(
                 alignment: Alignment.centerLeft,
-                child: Text("Comments",
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                child: Text("Comments *",
+                    style: TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.w600)),
               ),
               const SizedBox(height: 8),
               TextField(
                 controller: _commentsController,
                 maxLines: 2,
                 decoration: InputDecoration(
-                  hintText: "Add a note...",
+                  hintText: "Add a note... (required)",
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),
@@ -289,7 +373,7 @@ class _UnansweredCallDialogState extends State<UnansweredCallDialog> {
               ),
               const SizedBox(height: 20),
 
-              // Submit only
+              // Submit
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
@@ -303,10 +387,12 @@ class _UnansweredCallDialogState extends State<UnansweredCallDialog> {
                   ),
                   child: _isSubmitting
                       ? const SizedBox(
-                          height: 18, width: 18,
+                          height: 18,
+                          width: 18,
                           child: CircularProgressIndicator(
                               strokeWidth: 2, color: Colors.white))
-                      : const Text("Submit", style: TextStyle(fontSize: 16)),
+                      : const Text("Submit",
+                          style: TextStyle(fontSize: 16)),
                 ),
               ),
             ],
