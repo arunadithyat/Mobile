@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../api/call_log_api.dart';
 import '../api/lead_api.dart';
@@ -63,6 +64,9 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
   // Opportunity-specific fields
   String _opportunityAmount = '';
   final _amountController = TextEditingController();
+  DateTime? _expectedClosing;
+  String _reasonForNotInterested = '';
+  List<String> _notInterestedReasons = [];
 
   // Dropdown options
   Map<String, List<String>> _options = {};
@@ -71,6 +75,15 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
   static const _oppDateMandatoryStatuses = [
     'Demo', 'Quotation', 'Prospect', 'Pipeline'
   ];
+
+  bool get _isExpectedClosingMandatory {
+    return widget.isOpportunity &&
+        (_status == 'Prospect' || _status == 'Pipeline');
+  }
+
+  bool get _isNotInterested {
+    return widget.isOpportunity && _status == 'Not Interested';
+  }
 
   @override
   void initState() {
@@ -90,11 +103,14 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
       if (!mounted) return;
       setState(() {
         _options = options;
+        _notInterestedReasons = options['custom_reason_for_not_interested'] ?? [];
         _status = (values['status'] ?? '').toString();
         _opportunityAmount = (values['opportunity_amount'] ?? '').toString();
         _amountController.text = _opportunityAmount;
         final followUp = (values['custom_next_followup_date1'] ?? '').toString();
         if (followUp.isNotEmpty) _followUpDate = DateTime.tryParse(followUp);
+        final expClose = (values['expected_closing'] ?? '').toString();
+        if (expClose.isNotEmpty) _expectedClosing = DateTime.tryParse(expClose);
         _loading = false;
       });
     } else {
