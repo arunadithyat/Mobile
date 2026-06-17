@@ -32,7 +32,7 @@ class _UnansweredCallDialogState extends State<UnansweredCallDialog> {
   bool _isSubmitting = false;
   bool _loading = true;
 
-  static const List<String> _statusOptions = ['RNR', 'Junk'];
+  List<String> get _statusOptions => widget.isOpportunity ? ['RNR'] : ['RNR', 'Junk'];
 
   static const List<Map<String, dynamic>> _rnrReasons = [
     {'label': 'Ringing No Response', 'icon': Icons.phone_missed},
