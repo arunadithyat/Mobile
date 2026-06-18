@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -56,11 +57,15 @@ class DeviceApi {
       }
 
       final deviceId = await _getDeviceId();
+      final packageInfo = await PackageInfo.fromPlatform();
+      final appVersion = packageInfo.version;
+      final buildNumber = packageInfo.buildNumber;
 
       debugPrint('[DEVICE] Registering device...');
       debugPrint('[DEVICE] username   : $username');
       debugPrint('[DEVICE] device_id  : $deviceId');
-      debugPrint('[DEVICE] token (len): ${fcmToken.length}');
+      debugPrint('[DEVICE] token (len): \${fcmToken.length}');
+      debugPrint('[DEVICE] app_version: $appVersion+$buildNumber');
 
       final response = await http.post(
         Uri.parse(AppConfig.registerDeviceApi),
@@ -82,6 +87,8 @@ class DeviceApi {
           'platform': 'android',
           // Tell backend to upsert: update existing entry for this
           // device_id+user combo, or insert if none exists
+          'app_version': appVersion,
+          'build_number': buildNumber,
           'action': 'upsert',
         },
       ).timeout(const Duration(seconds: 10));
