@@ -611,7 +611,7 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text("Area *",
+                    Text("Area${_isJunk ? '' : ' *'}",
                         style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                     const SizedBox(height: 6),
                     TextField(
