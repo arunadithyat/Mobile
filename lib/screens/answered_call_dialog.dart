@@ -186,11 +186,15 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
       return;
     }
 
-    final comments = _commentsController.text.trim();
-    if (widget.isOpportunity && comments.isEmpty) {
-      _showSnack("Comments are mandatory");
-      return;
+    // Lead mandatory field checks
+    if (!widget.isOpportunity) {
+      if (_district.isEmpty) { _showSnack("District is mandatory"); return; }
+      if (_areaController.text.trim().isEmpty) { _showSnack("Area is mandatory"); return; }
+      if (_cityTown.isEmpty) { _showSnack("City / Town is mandatory"); return; }
     }
+
+    final comments = _commentsController.text.trim();
+    if (comments.isEmpty) { _showSnack("Comments are mandatory"); return; }
 
     setState(() => _isSubmitting = true);
 
@@ -279,6 +283,22 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
           leadName: widget.leadName,
           fields: fields,
         );
+
+        // Create Opportunity when status = "Opportunity"
+        if (_status == 'Opportunity' && result['success'] == true) {
+          final oppResult = await LeadApi.createOpportunity(
+            leadName: widget.leadName,
+            fields: {
+              'customer_name': widget.customerName,
+              'mobile_no': widget.mobileNo,
+              'custom_district': _district,
+              'custom_area': _areaController.text.trim(),
+              'custom_citytown': _cityTown,
+              'comments': comments,
+            },
+          );
+          debugPrint('[ANSWERED] Create Opportunity result: $oppResult');
+        }
       }
 
       if (!mounted) return;
@@ -306,7 +326,7 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
   }
 
   Widget _buildDropdown(String label, String fieldKey, String value,
-      ValueChanged<String> onChanged, {bool visible = true}) {
+      ValueChanged<String> onChanged, {bool visible = true, bool mandatory = false}) {
     if (!visible) return const SizedBox.shrink();
     final options = _getOptions(fieldKey);
     final safeOptions = [...options];
@@ -319,25 +339,110 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+          Text("$label${mandatory ? ' *' : ''}",
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
           const SizedBox(height: 6),
-          DropdownButtonFormField<String>(
-            value: value.isEmpty ? null : value,
-            isExpanded: true,
-            hint: Text("Select $label"),
-            decoration: InputDecoration(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              filled: hasFill,
-              fillColor: hasFill ? Colors.green.shade50 : null,
+          InkWell(
+            onTap: () => _showSearchableDropdown(label, safeOptions, value, onChanged),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.grey.shade400),
+                color: hasFill ? Colors.green.shade50 : null,
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      value.isEmpty ? "Select $label" : value,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: value.isEmpty ? Colors.grey : Colors.black87,
+                      ),
+                    ),
+                  ),
+                  Icon(Icons.arrow_drop_down, color: Colors.grey[600]),
+                ],
+              ),
             ),
-            items: safeOptions
-                .map((o) => DropdownMenuItem(value: o, child: Text(o, style: const TextStyle(fontSize: 14))))
-                .toList(),
-            onChanged: (v) { if (v != null) onChanged(v); },
           ),
         ],
       ),
+    );
+  }
+
+  void _showSearchableDropdown(
+      String label, List<String> options, String current, ValueChanged<String> onChanged) {
+    final searchController = TextEditingController();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            final query = searchController.text.toLowerCase();
+            final filtered = query.isEmpty
+                ? options
+                : options.where((o) => o.toLowerCase().contains(query)).toList();
+            return DraggableScrollableSheet(
+              expand: false,
+              initialChildSize: 0.5,
+              maxChildSize: 0.8,
+              minChildSize: 0.3,
+              builder: (_, scrollCtrl) => Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    Text("Select $label",
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: searchController,
+                      autofocus: true,
+                      decoration: InputDecoration(
+                        hintText: "Search...",
+                        prefixIcon: const Icon(Icons.search),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      ),
+                      onChanged: (_) => setSheetState(() {}),
+                    ),
+                    const SizedBox(height: 8),
+                    Expanded(
+                      child: ListView.builder(
+                        controller: scrollCtrl,
+                        itemCount: filtered.length,
+                        itemBuilder: (_, i) {
+                          final item = filtered[i];
+                          final selected = item == current;
+                          return ListTile(
+                            dense: true,
+                            title: Text(item,
+                                style: TextStyle(
+                                  fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+                                  color: selected ? Colors.blue : Colors.black87,
+                                )),
+                            trailing: selected ? const Icon(Icons.check, color: Colors.blue, size: 18) : null,
+                            onTap: () {
+                              onChanged(item);
+                              Navigator.pop(ctx);
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -442,9 +547,9 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
                     _customerType, (v) => setState(() => _customerType = v),
                     visible: _customerCategory.isNotEmpty && _customerCategory != 'B2C'),
                 _buildDropdown("District", "custom_district", _district,
-                    (v) => setState(() => _district = v)),
+                    (v) => setState(() => _district = v), mandatory: true),
                 _buildDropdown("City / Town", "custom_citytown", _cityTown,
-                    (v) => setState(() => _cityTown = v)),
+                    (v) => setState(() => _cityTown = v), mandatory: true),
               ],
 
               // --- Opportunity-specific fields ---
@@ -482,7 +587,7 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text("Area",
+                    const Text("Area *",
                         style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                     const SizedBox(height: 6),
                     TextField(
@@ -617,7 +722,7 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
               // Comments
               Align(
                 alignment: Alignment.centerLeft,
-                child: Text("Comments${widget.isOpportunity ? ' *' : ''}",
+                child: Text("Comments *",
                     style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
               ),
               const SizedBox(height: 6),

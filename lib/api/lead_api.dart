@@ -138,6 +138,48 @@ class LeadApi {
   }
 }
 
+  /// Creates an Opportunity from a Lead
+  static Future<Map<String, dynamic>> createOpportunity({
+    required String leadName,
+    required Map<String, dynamic> fields,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cookie = prefs.getString('cookie') ?? '';
+      if (cookie.isEmpty) return {'success': false, 'message': 'No session'};
+
+      debugPrint('[LEAD_API] Creating Opportunity from $leadName');
+
+      final body = <String, String>{'lead_name': leadName};
+      fields.forEach((key, value) {
+        if (value != null && value.toString().isNotEmpty) {
+          body[key] = value.toString();
+        }
+      });
+
+      final response = await http.post(
+        Uri.parse(AppConfig.createOpportunityApi),
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Cookie': cookie,
+          'X-Frappe-CSRF-Token': await _getCsrfToken(cookie),
+        },
+        body: body,
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        debugPrint('[LEAD_API] ✅ Opportunity created');
+        return {'success': true};
+      }
+      debugPrint('[LEAD_API] ❌ ${response.body}');
+      return {'success': false, 'message': 'Failed (${response.statusCode})'};
+    } catch (e) {
+      debugPrint('[LEAD_API] ❌ $e');
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+}
+
 class OpportunityApi {
   static Future<String> _getCsrfToken(String cookie) async {
     try {

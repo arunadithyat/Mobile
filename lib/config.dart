@@ -44,6 +44,10 @@ class AppConfig {
   static const String updateLeadApi =
       "$baseUrl/api/method/update_lead";
 
+  // Create Opportunity from Lead
+  static const String createOpportunityApi =
+      "$baseUrl/api/method/create_opportunity";
+
   // Fetch Opportunity field options
   static const String opportunityValuesApi =
       "$baseUrl/api/method/opportunity_values";
