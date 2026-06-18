@@ -8,7 +8,7 @@ class AppConfig {
 
   // Version check
   static const String updateRequiredApi =
-      "\$baseUrl/api/method/itgenie.lead_calling.mobile_api.update_required";
+      "$baseUrl/api/method/itgenie.lead_calling.mobile_api.update_required";
 
   static const String registerDeviceApi =
       "$baseUrl/api/method/itgenie.lead_calling.mobile_api.register_device";
