@@ -55,6 +55,8 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
   DateTime? _followUpDate;
   final _commentsController = TextEditingController();
   final _areaController = TextEditingController();
+  String _junkReason = '';
+  List<String> _junkReasonOptions = [];
 
   // Lead-specific fields
   String _customerCategory = '';
@@ -76,6 +78,8 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
   static const _oppDateMandatoryStatuses = [
     'Demo', 'Quotation', 'Prospect', 'Pipeline'
   ];
+
+  bool get _isJunk => !widget.isOpportunity && _status == 'Junk';
 
   bool get _isExpectedClosingMandatory {
     return widget.isOpportunity &&
@@ -125,6 +129,7 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
       if (!mounted) return;
       setState(() {
         _options = options;
+        _junkReasonOptions = options['custom_reason_for_junk'] ?? [];
         _status = (values['status'] ?? '').toString();
         _customerCategory = (values['custom_customer_category'] ?? '').toString();
         _customerType = (values['custom_customer_type'] ?? '').toString();
@@ -189,8 +194,8 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
       return;
     }
 
-    // Lead mandatory field checks
-    if (!widget.isOpportunity) {
+    // Lead mandatory field checks (skip for Junk)
+    if (!widget.isOpportunity && !_isJunk) {
       if (_customerCategory.isNotEmpty && _customerCategory != 'B2C' && _customerType.isEmpty) {
         _showSnack("Customer Type is mandatory"); return;
       }
@@ -199,8 +204,12 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
       if (_cityTown.isEmpty) { _showSnack("City / Town is mandatory"); return; }
     }
 
+    if (_isJunk && _junkReason.isEmpty) {
+      _showSnack("Reason for Junk is mandatory"); return;
+    }
+
     final comments = _commentsController.text.trim();
-    if (comments.isEmpty) { _showSnack("Comments are mandatory"); return; }
+    if (!_isJunk && comments.isEmpty) { _showSnack("Comments are mandatory"); return; }
 
     setState(() => _isSubmitting = true);
 
@@ -274,6 +283,9 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
         };
         if (_areaController.text.trim().isNotEmpty) {
           fields['custom_area'] = _areaController.text.trim();
+        }
+        if (_isJunk && _junkReason.isNotEmpty) {
+          fields['custom_reason_for_junk'] = _junkReason;
         }
         if (_customerCategory.isNotEmpty && _customerCategory != 'B2C') {
           fields['custom_customer_type'] = _customerType;
@@ -397,19 +409,19 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
                 : options.where((o) => o.toLowerCase().contains(query)).toList();
             return DraggableScrollableSheet(
               expand: false,
-              initialChildSize: 0.5,
-              maxChildSize: 0.8,
-              minChildSize: 0.3,
+              initialChildSize: 0.7,
+              maxChildSize: 0.9,
+              minChildSize: 0.4,
               builder: (_, scrollCtrl) => Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   children: [
                     Text("Select $label",
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 12),
                     TextField(
                       controller: searchController,
-                      autofocus: true,
+                      autofocus: false,
                       decoration: InputDecoration(
                         hintText: "Search...",
                         prefixIcon: const Icon(Icons.search),
@@ -427,9 +439,9 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
                           final item = filtered[i];
                           final selected = item == current;
                           return ListTile(
-                            dense: true,
                             title: Text(item,
                                 style: TextStyle(
+                                  fontSize: 16,
                                   fontWeight: selected ? FontWeight.bold : FontWeight.normal,
                                   color: selected ? Colors.blue : Colors.black87,
                                 )),
@@ -492,9 +504,9 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               const SizedBox(height: 4),
               Text(widget.customerName,
-                  style: TextStyle(fontSize: 14, color: Colors.grey[600])),
+                  style: TextStyle(fontSize: 16, color: Colors.grey[600])),
               Text(widget.mobileNo,
-                  style: TextStyle(fontSize: 13, color: Colors.grey[500])),
+                  style: TextStyle(fontSize: 15, color: Colors.grey[500])),
               const SizedBox(height: 4),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -525,7 +537,7 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
                     const Icon(Icons.timer, size: 18, color: Colors.blue),
                     const SizedBox(width: 8),
                     Text("Duration: ${_formatDuration(widget.callDuration)}",
-                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
                     const Spacer(),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -549,14 +561,19 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
               if (!widget.isOpportunity) ...[
                 _buildDropdown("Customer Category", "custom_customer_category",
                     _customerCategory, (v) => setState(() => _customerCategory = v)),
-                _buildDropdown("Customer Type", "custom_customer_type",
-                    _customerType, (v) => setState(() => _customerType = v),
-                    visible: _customerCategory.isNotEmpty && _customerCategory != 'B2C',
-                    mandatory: true),
-                _buildDropdown("District", "custom_district", _district,
-                    (v) => setState(() => _district = v), mandatory: true),
-                _buildDropdown("City / Town", "custom_citytown", _cityTown,
-                    (v) => setState(() => _cityTown = v), mandatory: true),
+                if (!_isJunk) ...[
+                  _buildDropdown("Customer Type", "custom_customer_type",
+                      _customerType, (v) => setState(() => _customerType = v),
+                      visible: _customerCategory.isNotEmpty && _customerCategory != 'B2C',
+                      mandatory: true),
+                  _buildDropdown("District", "custom_district", _district,
+                      (v) => setState(() => _district = v), mandatory: true),
+                  _buildDropdown("City / Town", "custom_citytown", _cityTown,
+                      (v) => setState(() => _cityTown = v), mandatory: true),
+                ],
+                if (_isJunk)
+                  _buildDropdown("Reason for Junk", "custom_reason_for_junk", _junkReason,
+                      (v) => setState(() => _junkReason = v), mandatory: true),
               ],
 
               // --- Opportunity-specific fields ---
