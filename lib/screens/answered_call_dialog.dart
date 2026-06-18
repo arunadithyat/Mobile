@@ -54,6 +54,7 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
   String _status = '';
   DateTime? _followUpDate;
   final _commentsController = TextEditingController();
+  final _areaController = TextEditingController();
 
   // Lead-specific fields
   String _customerCategory = '';
