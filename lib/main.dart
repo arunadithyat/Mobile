@@ -2432,18 +2432,13 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
   Widget build(BuildContext context) {
     return WillPopScope(
       onWillPop: () async {
-        if (callStarted) {
-          // Block back navigation during active call — post-call dialog needs this screen
-          debugPrint('[CALL] Back blocked — call is active');
-          return false;
-        }
-        timer?.cancel();
-        return true;
+        // Always block back — user must complete post-call update
+        return false;
       },
       child: Scaffold(
         appBar: AppBar(
           title: const Text("Incoming Call"),
-          automaticallyImplyLeading: !callStarted, // hide back arrow during call
+          automaticallyImplyLeading: false, // always hide back arrow
         ),
         body: Center(
           child: Column(
@@ -2471,33 +2466,14 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
                   ),
                 )
               else
-                const Text(
-                  "Launching call...",
+                Text(
+                  callStarted ? "On Call..." : "Launching call...",
                   style: TextStyle(
                     fontSize: 18,
-                    color: Colors.blue,
+                    color: callStarted ? Colors.green : Colors.blue,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-              const SizedBox(height: 40),
-              ElevatedButton(
-                // Disabled during active call — post-call dialog handles the rest
-                onPressed: callStarted
-                    ? null
-                    : () {
-                        timer?.cancel();
-                        callDurationTimer?.cancel();
-                        _callStateSubscription?.cancel();
-                        callStarted = false;
-                        Navigator.pop(context, {'status': 'cancelled'});
-                      },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: callStarted ? Colors.grey : Colors.red,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 16),
-                ),
-                child: Text(callStarted ? "On Call..." : "Cancel"),
-              ),
             ],
           ),
         ),
