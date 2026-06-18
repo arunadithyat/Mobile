@@ -69,7 +69,7 @@ class LeadApi {
 
       final fields = Uri.encodeComponent(jsonEncode([
         "status", "custom_customer_category", "custom_customer_type",
-        "custom_district", "custom_citytown", "custom_next_followup_date1"
+        "custom_district", "custom_citytown", "custom_area", "custom_next_followup_date1"
       ]));
       final url = '${AppConfig.baseUrl}/api/resource/Lead/$leadName?fields=$fields';
 
@@ -199,7 +199,7 @@ class OpportunityApi {
       debugPrint('[OPP_API] Fetching current values for: $oppName');
 
       final fields = Uri.encodeComponent(jsonEncode([
-        "status", "opportunity_amount", "custom_next_followup_date1", "expected_closing"
+        "status", "opportunity_amount", "city", "custom_next_followup_date1", "expected_closing"
       ]));
       final url = '${AppConfig.baseUrl}/api/resource/Opportunity/$oppName?fields=$fields';
 

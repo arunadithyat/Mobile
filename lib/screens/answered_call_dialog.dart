@@ -232,6 +232,9 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
         };
         if (!_isNotInterested) {
           fields['opportunity_amount'] = _amountController.text.trim();
+          if (_areaController.text.trim().isNotEmpty) {
+            fields['city'] = _areaController.text.trim();
+          }
         }
         if (_followUpDate != null && !_isNotInterested) {
           fields['custom_next_followup_date1'] =
@@ -258,6 +261,9 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
           'custom_district': _district,
           'custom_citytown': _cityTown,
         };
+        if (_areaController.text.trim().isNotEmpty) {
+          fields['custom_area'] = _areaController.text.trim();
+        }
         if (_customerCategory.isNotEmpty && _customerCategory != 'B2C') {
           fields['custom_customer_type'] = _customerType;
         }
@@ -337,6 +343,7 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
   @override
   void dispose() {
     _commentsController.dispose();
+    _areaController.dispose();
     _amountController.dispose();
     super.dispose();
   }
@@ -467,6 +474,28 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
                   ),
                 ),
               ],
+
+              // Area field
+              Padding(
+                padding: const EdgeInsets.only(bottom: 14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text("Area",
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: _areaController,
+                      decoration: InputDecoration(
+                        hintText: "Enter area",
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        filled: _areaController.text.isNotEmpty,
+                        fillColor: Colors.green.shade50,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
 
               // Expected Closing Date (Prospect/Pipeline)
               if (_isExpectedClosingMandatory)
