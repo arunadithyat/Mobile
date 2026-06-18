@@ -114,9 +114,12 @@ class _UnansweredCallDialogState extends State<UnansweredCallDialog> {
     setState(() => _isSubmitting = true);
 
     try {
-      final fullComment = _status == 'RNR'
-          ? '[$_rnrReason] $comments'
-          : '[Junk - $_junkReason] $comments';
+      final String fullComment;
+      if (_status == 'Junk') {
+        fullComment = '[Junk - $_junkReason] $comments';
+      } else {
+        fullComment = '[$_rnrReason] $comments';
+      }
 
       Map<String, dynamic> result;
       if (widget.isOpportunity) {
