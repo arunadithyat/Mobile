@@ -181,6 +181,8 @@ class DeviceApi {
         },
       ).timeout(const Duration(seconds: 10));
 
+      debugPrint('[DEVICE] Update check response: ${response.statusCode}');
+      debugPrint('[DEVICE] Update check body: ${response.body}');
       if (response.statusCode == 200) {
         final jsonData = jsonDecode(response.body);
         final msg = jsonData['message'];

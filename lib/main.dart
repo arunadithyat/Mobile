@@ -697,10 +697,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         debugPrint("✅ Device registered successfully");
         // Check if app update is required
         final updateResult = await DeviceApi.checkForUpdate();
+        debugPrint("🔍 UPDATE CHECK => $updateResult");
         if (updateResult['update_required'] == true) {
           final latestVersion = updateResult['latest_version'] ?? '';
           debugPrint("⚠️ App update required! Latest: $latestVersion");
           if (mounted) _showUpdateRequiredDialog(latestVersion);
+        } else {
+          debugPrint("✅ App is up to date");
         }
       }
     } else {
