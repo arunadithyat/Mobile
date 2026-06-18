@@ -88,7 +88,7 @@ class DeviceApi {
           // Tell backend to upsert: update existing entry for this
           // device_id+user combo, or insert if none exists
           'app_version': appVersion,
-          'build_number': buildNumber,
+          'build_version': buildNumber,
           'action': 'upsert',
         },
       ).timeout(const Duration(seconds: 10));
