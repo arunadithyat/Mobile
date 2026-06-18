@@ -1596,16 +1596,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             Text("Call Queue (${all.length})",
                 style: const TextStyle(
                     fontSize: 19, fontWeight: FontWeight.bold)),
-            ElevatedButton.icon(
-              onPressed: _processFirstQueuedCall,
-              icon: const Icon(Icons.phone, size: 18),
-              label: const Text("Process"),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-              ),
-            ),
           ],
         ),
         const SizedBox(height: 8),
@@ -1672,6 +1662,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                       fontSize: 14,
                                       color: Colors.blue.shade700,
                                       fontWeight: FontWeight.w500)),
+                            if (call.isOpportunity && call.opportunityAmount.isNotEmpty && call.opportunityAmount != '0' && call.opportunityAmount != '0.0')
+                              Text("₹ ${call.opportunityAmount}",
+                                  style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.green.shade700,
+                                      fontWeight: FontWeight.w600)),
                           ],
                         ),
                       ),
@@ -1679,17 +1675,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                           style: TextStyle(
                               fontSize: 15, color: Colors.grey[700])),
                       IconButton(
-                        visualDensity: VisualDensity.compact,
                         icon: const Icon(Icons.call,
-                            size: 18, color: Colors.green),
+                            size: 26, color: Colors.green),
                         tooltip: "Call now",
                         onPressed: () =>
                             _processQueuedCallAt(entry.value.key),
                       ),
                       IconButton(
-                        visualDensity: VisualDensity.compact,
                         icon: const Icon(Icons.message,
-                            size: 18, color: Colors.teal),
+                            size: 26, color: Colors.teal),
                         tooltip: "Send SMS / WhatsApp",
                         onPressed: () => _showMessageSheet(call),
                       ),

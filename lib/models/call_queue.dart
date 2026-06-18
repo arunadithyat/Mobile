@@ -9,6 +9,7 @@ class CallQueueItem {
   final String customerName;
   final String mobileNo;
   final String productEnquired; // custom_product_enquired
+  final String opportunityAmount; // opportunity_amount
   final DateTime queuedAt;
   final String autoCall;
   final String category;
@@ -23,6 +24,7 @@ class CallQueueItem {
     required this.customerName,
     required this.mobileNo,
     this.productEnquired = '',
+    this.opportunityAmount = '',
     required this.queuedAt,
     this.autoCall = "1",
     this.category = "Hot Leads",
@@ -55,6 +57,7 @@ class CallQueueItem {
       'customer_name': customerName,
       'mobile_no': mobileNo,
       'product_enquired': productEnquired,
+      'opportunity_amount': opportunityAmount,
       'auto_call': autoCall,
       'category': category,
       'queued_at': queuedAt.toIso8601String(),
@@ -77,6 +80,7 @@ class CallQueueItem {
       customerName: data['customer_name'] ?? '',
       mobileNo: data['mobile_no'] ?? '',
       productEnquired: (data['product_enquired'] ?? data['custom_product_enquired'] ?? '').toString(),
+      opportunityAmount: (data['opportunity_amount'] ?? '').toString(),
       queuedAt: _parseDateTime(data),
       autoCall: data['auto_call'] ?? '1',
       category: _resolveCategory(data, doctype),
