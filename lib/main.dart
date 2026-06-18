@@ -695,6 +695,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         debugPrint("❌ Device registration failed: ${registerResult['message']}");
       } else {
         debugPrint("✅ Device registered successfully");
+        // Check if app update is required
+        if (registerResult['update_required'] == true) {
+          final latestVersion = registerResult['latest_version'] ?? '';
+          debugPrint("⚠️ App update required! Latest: $latestVersion");
+          if (mounted) _showUpdateRequiredDialog(latestVersion);
+        }
       }
     } else {
       debugPrint("❌ FCM Token is empty!");
@@ -1163,6 +1169,51 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(builder: (_) => const LoginPage()),
+    );
+  }
+
+  void _showUpdateRequiredDialog(String latestVersion) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Row(
+            children: [
+              Icon(Icons.system_update, color: Colors.blue, size: 28),
+              SizedBox(width: 10),
+              Text("Update Available"),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text("A new version ($latestVersion) is available.",
+                  style: const TextStyle(fontSize: 16)),
+              const SizedBox(height: 8),
+              const Text("Please update SalesGenie to continue using the app.",
+                  style: TextStyle(fontSize: 14, color: Colors.grey)),
+            ],
+          ),
+          actions: [
+            ElevatedButton(
+              onPressed: () {
+                // Close app — user updates manually via APK
+                SystemNavigator.pop();
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1A73E8),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              child: const Text("OK, Close App"),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

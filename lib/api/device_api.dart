@@ -112,6 +112,20 @@ class DeviceApi {
           } catch (_) {}
         }
         debugPrint('[DEVICE] ✅ Device registered/updated successfully');
+        // Pass through server response (includes update_required)
+        try {
+          final jsonData = jsonDecode(response.body);
+          final msg = jsonData['message'];
+          if (msg is Map<String, dynamic>) {
+            return {
+              'success': true,
+              'message': 'Device registered',
+              'update_required': msg['update_required'] ?? false,
+              'latest_version': msg['latest_version'] ?? '',
+              'latest_build': msg['latest_build'] ?? '',
+            };
+          }
+        } catch (_) {}
         return {'success': true, 'message': 'Device registered'};
       }
 
