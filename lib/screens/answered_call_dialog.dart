@@ -568,7 +568,30 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
                   ],
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
+
+              // Inline error message
+              if (_errorMessage.isNotEmpty)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.red.shade300),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.error_outline, color: Colors.red.shade700, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(_errorMessage,
+                            style: TextStyle(color: Colors.red.shade700, fontSize: 13, fontWeight: FontWeight.w500)),
+                      ),
+                    ],
+                  ),
+                ),
 
               // Status dropdown
               _buildDropdown("Status", "status", _status,
