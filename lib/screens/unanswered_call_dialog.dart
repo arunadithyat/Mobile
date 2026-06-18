@@ -31,6 +31,8 @@ class _UnansweredCallDialogState extends State<UnansweredCallDialog> {
   final _commentsController = TextEditingController();
   bool _isSubmitting = false;
   bool _loading = true;
+  String _currentLeadStatus = ''; // actual Lead status from ERPNext
+  bool get _isFollowupLead => !widget.isOpportunity && _currentLeadStatus == 'Followup';
 
   List<String> get _statusOptions => widget.isOpportunity ? ['RNR'] : ['RNR', 'Junk'];
 
@@ -51,11 +53,24 @@ class _UnansweredCallDialogState extends State<UnansweredCallDialog> {
   }
 
   Future<void> _fetchOptions() async {
-    final options = await LeadApi.getFieldOptions();
+    final results = await Future.wait([
+      LeadApi.getFieldOptions(),
+      if (widget.leadName.isNotEmpty)
+        LeadApi.getLeadCurrentValues(widget.leadName)
+      else
+        Future.value(<String, dynamic>{}),
+    ]);
+    final options = results[0] as Map<String, List<String>>;
+    final values = results[1] as Map<String, dynamic>;
     if (!mounted) return;
     setState(() {
       _junkReasonOptions = options['custom_reason_for_junk'] ?? [];
       if (_junkReasonOptions.isNotEmpty) _junkReason = _junkReasonOptions.first;
+      _currentLeadStatus = (values['status'] ?? '').toString();
+      // If Lead is already Followup, keep it as Followup
+      if (_isFollowupLead) {
+        _status = 'Followup';
+      }
       _loading = false;
     });
   }
@@ -110,7 +125,7 @@ class _UnansweredCallDialogState extends State<UnansweredCallDialog> {
       } else {
         result = await CallLogApi.updateLeadRnr(
           leadName: widget.leadName,
-          status: _status,
+          status: _isFollowupLead ? 'Followup' : _status,
           followUpDate: _status == 'RNR'
               ? _followUpDate!.toIso8601String().split('T')[0]
               : DateTime.now().toIso8601String().split('T')[0],
@@ -174,7 +189,8 @@ class _UnansweredCallDialogState extends State<UnansweredCallDialog> {
                   style: TextStyle(fontSize: 13, color: Colors.grey[600])),
               const SizedBox(height: 20),
 
-              // Status: RNR / Junk
+              // Status: RNR / Junk (hidden for Followup leads)
+              if (!_isFollowupLead) ...[
               const Align(
                 alignment: Alignment.centerLeft,
                 child: Text("Status",
@@ -220,9 +236,26 @@ class _UnansweredCallDialogState extends State<UnansweredCallDialog> {
                 }).toList(),
               ),
               const SizedBox(height: 16),
+              ], // end !_isFollowupLead
 
-              // RNR reasons (only when RNR selected)
-              if (_status == 'RNR') ...[
+              // Followup Lead banner
+              if (_isFollowupLead) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.blue.shade200),
+                  ),
+                  child: Text("Status: Followup (unchanged)",
+                      style: TextStyle(color: Colors.blue.shade700, fontWeight: FontWeight.w600)),
+                ),
+              ],
+
+              // RNR reasons (shown for RNR status OR Followup leads)
+              if (_status == 'RNR' || _isFollowupLead) ...[
                 const Align(
                   alignment: Alignment.centerLeft,
                   child: Text("Reason",
