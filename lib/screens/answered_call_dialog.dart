@@ -157,8 +157,11 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
   }
 
   bool get _isFollowUpMandatory {
-    if (!widget.isOpportunity) return false;
-    return _oppDateMandatoryStatuses.contains(_status);
+    if (widget.isOpportunity) {
+      return _status != 'Not Interested';
+    }
+    // Lead: mandatory for Followup status
+    return _status == 'Followup';
   }
 
   Future<void> _submit() async {
