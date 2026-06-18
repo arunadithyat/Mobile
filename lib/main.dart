@@ -2474,6 +2474,24 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
                     fontWeight: FontWeight.w600,
                   ),
                 ),
+              // Cancel only during countdown — hidden after call starts
+              if (!callTriggered) ...[
+                const SizedBox(height: 40),
+                ElevatedButton(
+                  onPressed: () {
+                    timer?.cancel();
+                    callDurationTimer?.cancel();
+                    _callStateSubscription?.cancel();
+                    Navigator.pop(context, {'status': 'cancelled'});
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 16),
+                  ),
+                  child: const Text("Cancel"),
+                ),
+              ],
             ],
           ),
         ),
