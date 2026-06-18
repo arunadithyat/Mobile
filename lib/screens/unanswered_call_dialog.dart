@@ -114,31 +114,27 @@ class _UnansweredCallDialogState extends State<UnansweredCallDialog> {
     setState(() => _isSubmitting = true);
 
     try {
-      final String fullComment;
-      if (_status == 'Junk') {
-        fullComment = '[Junk - $_junkReason] $comments';
-      } else {
-        fullComment = '[$_rnrReason] $comments';
-      }
+      // Send reason separately, comments as user typed
+      final String reason = _status == 'Junk' ? _junkReason : _rnrReason;
 
       Map<String, dynamic> result;
       if (widget.isOpportunity) {
         result = await CallLogApi.updateOpportunityRnr(
           opportunityName: widget.opportunityName,
           status: _currentOppStatus.isNotEmpty ? _currentOppStatus : _status,
-          followUpDate: _status == 'RNR'
+          followUpDate: _followUpDate != null
               ? _followUpDate!.toIso8601String().split('T')[0]
               : DateTime.now().toIso8601String().split('T')[0],
-          comments: fullComment,
+          comments: '[$reason] $comments',
         );
       } else {
         result = await CallLogApi.updateLeadRnr(
           leadName: widget.leadName,
           status: _isFollowupLead ? 'Followup' : _status,
-          followUpDate: _status == 'RNR'
+          followUpDate: _followUpDate != null
               ? _followUpDate!.toIso8601String().split('T')[0]
               : DateTime.now().toIso8601String().split('T')[0],
-          comments: fullComment,
+          comments: '[$reason] $comments',
           junkReason: _status == 'Junk' ? _junkReason : '',
         );
       }
