@@ -191,6 +191,9 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
 
     // Lead mandatory field checks
     if (!widget.isOpportunity) {
+      if (_customerCategory.isNotEmpty && _customerCategory != 'B2C' && _customerType.isEmpty) {
+        _showSnack("Customer Type is mandatory"); return;
+      }
       if (_district.isEmpty) { _showSnack("District is mandatory"); return; }
       if (_areaController.text.trim().isEmpty) { _showSnack("Area is mandatory"); return; }
       if (_cityTown.isEmpty) { _showSnack("City / Town is mandatory"); return; }
@@ -548,7 +551,8 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
                     _customerCategory, (v) => setState(() => _customerCategory = v)),
                 _buildDropdown("Customer Type", "custom_customer_type",
                     _customerType, (v) => setState(() => _customerType = v),
-                    visible: _customerCategory.isNotEmpty && _customerCategory != 'B2C'),
+                    visible: _customerCategory.isNotEmpty && _customerCategory != 'B2C',
+                    mandatory: true),
                 _buildDropdown("District", "custom_district", _district,
                     (v) => setState(() => _district = v), mandatory: true),
                 _buildDropdown("City / Town", "custom_citytown", _cityTown,
