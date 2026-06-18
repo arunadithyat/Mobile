@@ -364,6 +364,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     await _initializeNotifications();
     _listenForTokenRefresh();
     await _syncIncomingDeviceCalls();
+
+    // Always check for app update on every open
+    await _checkAppUpdate();
   }
 
   /// Scans device incoming calls, matches against call queue, and
@@ -1174,6 +1177,23 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       context,
       MaterialPageRoute(builder: (_) => const LoginPage()),
     );
+  }
+
+  Future<void> _checkAppUpdate() async {
+    try {
+      debugPrint('[UPDATE] Checking for app update...');
+      final result = await DeviceApi.checkForUpdate();
+      debugPrint('[UPDATE] Result: $result');
+      if (result['update_required'] == true) {
+        final latestVersion = result['latest_version'] ?? '';
+        debugPrint('[UPDATE] ⚠️ Update required! Latest: $latestVersion');
+        if (mounted) _showUpdateRequiredDialog(latestVersion);
+      } else {
+        debugPrint('[UPDATE] ✅ App is up to date');
+      }
+    } catch (e) {
+      debugPrint('[UPDATE] ❌ Error: $e');
+    }
   }
 
   void _showUpdateRequiredDialog(String latestVersion) {
