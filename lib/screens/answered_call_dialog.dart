@@ -49,6 +49,7 @@ class AnsweredCallDialog extends StatefulWidget {
 class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
   bool _loading = true;
   bool _isSubmitting = false;
+  String _errorMessage = '';
 
   // Shared fields
   String _status = '';
@@ -350,14 +351,16 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
   }
 
   void _showSnack(String msg, [Color? bg]) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg, style: const TextStyle(fontSize: 14)),
-        backgroundColor: bg,
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.only(bottom: 80, left: 16, right: 16),
-      ),
-    );
+    if (bg == Colors.green) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(msg), backgroundColor: bg),
+      );
+    } else {
+      setState(() => _errorMessage = msg);
+      Future.delayed(const Duration(seconds: 3), () {
+        if (mounted) setState(() => _errorMessage = '');
+      });
+    }
   }
 
   Widget _buildDropdown(String label, String fieldKey, String value,
