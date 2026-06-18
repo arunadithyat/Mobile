@@ -317,8 +317,6 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
 
         // Create Opportunity when status = "Opportunity"
         if (_status == 'Opportunity' && result['success'] == true) {
-          debugPrint('[ANSWERED] Lead updated to Opportunity — creating Opportunity...');
-          debugPrint('[ANSWERED] leadName: ${widget.leadName}');
           final oppResult = await LeadApi.createOpportunity(
             leadName: widget.leadName,
             fields: {
@@ -331,9 +329,6 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
             },
           );
           debugPrint('[ANSWERED] Create Opportunity result: $oppResult');
-        } else if (_status == 'Opportunity') {
-          debugPrint('[ANSWERED] ⚠️ Lead update failed — skipping Opportunity creation');
-          debugPrint('[ANSWERED] update_lead result: $result');
         }
       }
 
