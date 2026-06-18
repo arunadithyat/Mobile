@@ -1674,13 +1674,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       Text(call.mobileNo,
                           style: TextStyle(
                               fontSize: 15, color: Colors.grey[700])),
-                      IconButton(
-                        icon: const Icon(Icons.call,
-                            size: 26, color: Colors.green),
-                        tooltip: "Call now",
-                        onPressed: () =>
-                            _processQueuedCallAt(entry.value.key),
-                      ),
+                      if (!_isPaused)
+                        IconButton(
+                          icon: const Icon(Icons.call,
+                              size: 26, color: Colors.green),
+                          tooltip: "Call now",
+                          onPressed: () =>
+                              _processQueuedCallAt(entry.value.key),
+                        ),
                       IconButton(
                         icon: const Icon(Icons.message,
                             size: 26, color: Colors.teal),
