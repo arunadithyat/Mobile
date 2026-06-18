@@ -97,7 +97,7 @@ class _CallHistoryTabState extends State<CallHistoryTab> {
                     const SizedBox(height: 16),
                     Text(
                       'No calls made yet',
-                      style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                      style: TextStyle(fontSize: 18, color: Colors.grey[600]),
                     ),
                   ],
                 ),
@@ -131,12 +131,12 @@ class _CallHistoryTabState extends State<CallHistoryTab> {
             ),
             title: Text(
               e.customerName.isEmpty ? e.mobileNo : e.customerName,
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
             ),
             subtitle: Text(
               '${e.mobileNo}  •  ${_formatTime(e.calledAt)}'
               '${e.durationSeconds > 0 ? '  •  ${_formatDuration(e.durationSeconds)}' : ''}',
-              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
             ),
             trailing: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -147,7 +147,7 @@ class _CallHistoryTabState extends State<CallHistoryTab> {
               child: Text(
                 e.status,
                 style: TextStyle(
-                  fontSize: 11,
+                  fontSize: 13,
                   fontWeight: FontWeight.w600,
                   color: color,
                 ),

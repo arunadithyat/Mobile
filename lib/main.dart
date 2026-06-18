@@ -1246,6 +1246,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               Navigator.pop(context);
             },
           ),
+          ListTile(
+            leading: const Icon(Icons.logout, color: Colors.red),
+            title: const Text('Logout', style: TextStyle(color: Colors.red)),
+            onTap: () {
+              Navigator.pop(context); // close drawer
+              logout();
+            },
+          ),
         ],
       ),
     );
@@ -1455,14 +1463,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     children: [
                       Text("$count",
                           style: TextStyle(
-                              fontSize: 22,
+                              fontSize: 28,
                               fontWeight: FontWeight.bold,
                               color: color)),
                       Text(cat,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                              fontSize: 13, color: Colors.grey[700])),
+                              fontSize: 15, color: Colors.grey[700])),
                     ],
                   ),
                 ),
@@ -1587,7 +1595,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           children: [
             Text("Call Queue (${all.length})",
                 style: const TextStyle(
-                    fontSize: 17, fontWeight: FontWeight.bold)),
+                    fontSize: 19, fontWeight: FontWeight.bold)),
             ElevatedButton.icon(
               onPressed: _processFirstQueuedCall,
               icon: const Icon(Icons.phone, size: 18),
@@ -1612,7 +1620,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   children: [
                     Text(cat,
                         style: TextStyle(
-                            fontSize: 15,
+                            fontSize: 17,
                             fontWeight: FontWeight.bold,
                             color: Colors.grey[800])),
                     const SizedBox(width: 6),
@@ -1654,14 +1662,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
-                                    fontSize: 15,
+                                    fontSize: 17,
                                     fontWeight: FontWeight.w600)),
                             if (call.productEnquired.isNotEmpty)
                               Text(call.productEnquired,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
-                                      fontSize: 12,
+                                      fontSize: 14,
                                       color: Colors.blue.shade700,
                                       fontWeight: FontWeight.w500)),
                           ],
@@ -1669,7 +1677,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       ),
                       Text(call.mobileNo,
                           style: TextStyle(
-                              fontSize: 14, color: Colors.grey[700])),
+                              fontSize: 15, color: Colors.grey[700])),
                       IconButton(
                         visualDensity: VisualDensity.compact,
                         icon: const Icon(Icons.call,
@@ -1719,13 +1727,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return Scaffold(
       appBar: AppBar(
         title: const Text("One Stop Many Solutions"),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: logout,
-            tooltip: "Logout",
-          ),
-        ],
       ),
       drawer: _buildDrawer(),
       floatingActionButton: FloatingActionButton(
