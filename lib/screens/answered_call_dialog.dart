@@ -57,6 +57,8 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
   final _areaController = TextEditingController();
   String _junkReason = '';
   List<String> _junkReasonOptions = [];
+  String _notInterestedReason = '';
+  List<String> _notInterestedReasonOptions = [];
 
   // Lead-specific fields
   String _customerCategory = '';
@@ -80,6 +82,7 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
   ];
 
   bool get _isJunk => !widget.isOpportunity && _status == 'Junk';
+  bool get _isNotInterestedLead => !widget.isOpportunity && _status == 'Not Interested';
 
   bool get _isExpectedClosingMandatory {
     return widget.isOpportunity &&
@@ -130,6 +133,7 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
       setState(() {
         _options = options;
         _junkReasonOptions = options['custom_reason_for_junk'] ?? [];
+        _notInterestedReasonOptions = options['custom_reason_for_not_interested'] ?? [];
         _status = (values['status'] ?? '').toString();
         _customerCategory = (values['custom_customer_category'] ?? '').toString();
         _customerType = (values['custom_customer_type'] ?? '').toString();
@@ -195,7 +199,7 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
     }
 
     // Lead mandatory field checks (skip for Junk)
-    if (!widget.isOpportunity && !_isJunk) {
+    if (!widget.isOpportunity && !_isJunk && !_isNotInterestedLead) {
       if (_customerCategory.isNotEmpty && _customerCategory != 'B2C' && _customerType.isEmpty) {
         _showSnack("Customer Type is mandatory"); return;
       }
@@ -207,9 +211,14 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
     if (_isJunk && _junkReason.isEmpty) {
       _showSnack("Reason for Junk is mandatory"); return;
     }
+    if (_isNotInterestedLead && _notInterestedReason.isEmpty) {
+      _showSnack("Reason for Not Interested is mandatory"); return;
+    }
 
     final comments = _commentsController.text.trim();
-    if (!_isJunk && comments.isEmpty) { _showSnack("Comments are mandatory"); return; }
+    if ((_isNotInterestedLead || (!_isJunk && !_isNotInterestedLead)) && comments.isEmpty) {
+      _showSnack("Comments are mandatory"); return;
+    }
 
     setState(() => _isSubmitting = true);
 
@@ -287,6 +296,9 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
         if (_isJunk && _junkReason.isNotEmpty) {
           fields['custom_reason_for_junk'] = _junkReason;
         }
+        if (_isNotInterestedLead && _notInterestedReason.isNotEmpty) {
+          fields['custom_reason_for_not_interested'] = _notInterestedReason;
+        }
         if (_customerCategory.isNotEmpty && _customerCategory != 'B2C') {
           fields['custom_customer_type'] = _customerType;
         }
@@ -339,7 +351,12 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
 
   void _showSnack(String msg, [Color? bg]) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), backgroundColor: bg),
+      SnackBar(
+        content: Text(msg, style: const TextStyle(fontSize: 14)),
+        backgroundColor: bg,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.only(bottom: 80, left: 16, right: 16),
+      ),
     );
   }
 
@@ -561,7 +578,7 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
               if (!widget.isOpportunity) ...[
                 _buildDropdown("Customer Category", "custom_customer_category",
                     _customerCategory, (v) => setState(() => _customerCategory = v)),
-                if (!_isJunk) ...[
+                if (!_isJunk && !_isNotInterestedLead) ...[
                   _buildDropdown("Customer Type", "custom_customer_type",
                       _customerType, (v) => setState(() => _customerType = v),
                       visible: _customerCategory.isNotEmpty && _customerCategory != 'B2C',
@@ -574,6 +591,9 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
                 if (_isJunk)
                   _buildDropdown("Reason for Junk", "custom_reason_for_junk", _junkReason,
                       (v) => setState(() => _junkReason = v), mandatory: true),
+                if (_isNotInterestedLead)
+                  _buildDropdown("Reason for Not Interested", "custom_reason_for_not_interested", _notInterestedReason,
+                      (v) => setState(() => _notInterestedReason = v), mandatory: true),
               ],
 
               // --- Opportunity-specific fields ---
@@ -611,7 +631,7 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text("Area${_isJunk ? '' : ' *'}",
+                    Text("Area${(_isJunk || _isNotInterestedLead) ? '' : ' *'}",
                         style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                     const SizedBox(height: 6),
                     TextField(
@@ -701,7 +721,7 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
                 ),
 
               // Follow-up date (hidden for Not Interested)
-              if (!_isNotInterested) Padding(
+              if (!_isNotInterested && !_isNotInterestedLead && !_isJunk) Padding(
                 padding: const EdgeInsets.only(bottom: 14),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -746,7 +766,7 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
               // Comments
               Align(
                 alignment: Alignment.centerLeft,
-                child: Text("Comments *",
+                child: Text("Comments${(_isJunk) ? '' : ' *'}",
                     style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
               ),
               const SizedBox(height: 6),
