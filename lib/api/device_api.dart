@@ -159,4 +159,43 @@ class DeviceApi {
     // The actual call is made from main.dart _initFCM() after login.
     debugPrint('[DEVICE] Token refresh should be triggered from _initFCM() in main.dart');
   }
+
+  /// Checks if app update is required
+  static Future<Map<String, dynamic>> checkForUpdate() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cookie = prefs.getString('cookie') ?? '';
+      if (cookie.isEmpty) return {'update_required': false};
+
+      final packageInfo = await PackageInfo.fromPlatform();
+
+      final response = await http.post(
+        Uri.parse(AppConfig.updateRequiredApi),
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Cookie': cookie,
+        },
+        body: {
+          'app_version': packageInfo.version,
+          'build_version': packageInfo.buildNumber,
+        },
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final jsonData = jsonDecode(response.body);
+        final msg = jsonData['message'];
+        if (msg is Map<String, dynamic>) {
+          return {
+            'update_required': msg['update_required'] ?? false,
+            'latest_version': msg['latest_version'] ?? '',
+            'latest_build': msg['latest_build'] ?? '',
+          };
+        }
+      }
+      return {'update_required': false};
+    } catch (e) {
+      debugPrint('[DEVICE] ❌ Update check error: $e');
+      return {'update_required': false};
+    }
+  }
 }
