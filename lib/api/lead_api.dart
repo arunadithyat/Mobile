@@ -136,7 +136,6 @@ class LeadApi {
       return {'success': false, 'message': e.toString()};
     }
   }
-}
 
   /// Creates an Opportunity from a Lead
   static Future<Map<String, dynamic>> createOpportunity({
