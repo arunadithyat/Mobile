@@ -914,27 +914,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       return;
     }
 
-    debugPrint("✅ User is free — showing Incoming Lead and auto-calling");
-    // Show Incoming Lead screen directly with FCM payload data
-    _processingLock = true;
-    setState(() { _isLeadCallInProgress = true; });
-
-    final routeResult = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => LeadCallScreen(data: normalized),
+    debugPrint("✅ FCM received — refreshing queue and notifying user");
+    // Refresh queue from API to show the new call
+    await _refreshQueueDisplay();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'New call: ${normalized["customer_name"] ?? "Unknown"} — ${normalized["mobile_no"] ?? ""}',
+        ),
+        duration: const Duration(seconds: 3),
       ),
     );
-
-    if (!mounted) return;
-    setState(() { _isLeadCallInProgress = false; });
-    _processingLock = false;
-
-    // Refresh queue from API after call ends — shows remaining pending calls
-    await _refreshQueueDisplay();
-
     setState(() {
-      _lastPushAction = "fcm_auto_call";
+      _lastPushAction = "fcm_queued";
     });
     debugPrint("========== END INCOMING LEAD CALL ==========");
   }
