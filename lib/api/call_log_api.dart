@@ -496,11 +496,23 @@ class CallLogDoctypeApi {
       debugPrint('[CALL_LOG_DOCTYPE] PUT $url');
       debugPrint('[CALL_LOG_DOCTYPE] to: $mobileNo | duration: $durationSeconds | status: $erpStatus');
 
+      // Get CSRF token
+      final csrfResponse = await http.get(
+        Uri.parse('${AppConfig.baseUrl}/api/method/frappe.auth.get_csrf_token'),
+        headers: {'Cookie': cookie},
+      ).timeout(const Duration(seconds: 5));
+      String csrfToken = '';
+      if (csrfResponse.statusCode == 200) {
+        final csrfJson = jsonDecode(csrfResponse.body);
+        csrfToken = (csrfJson['message'] ?? '').toString();
+      }
+
       final response = await http.put(
         Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
           'Cookie': cookie,
+          'X-Frappe-CSRF-Token': csrfToken,
         },
         body: jsonEncode(data),
       ).timeout(const Duration(seconds: 10));

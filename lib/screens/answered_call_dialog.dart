@@ -227,7 +227,7 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
       final fromNumber = await AutoDialer.getOwnNumber();
 
       // 1. Update Call Log doctype
-      await CallLogDoctypeApi.updateCallLog(
+      final callLogResult = await CallLogDoctypeApi.updateCallLog(
         callLogName: widget.callLogName,
         mobileNo: widget.mobileNo,
         fromNumber: fromNumber,
@@ -235,6 +235,10 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
         durationSeconds: widget.callDuration.inSeconds,
         attended: widget.attended,
       );
+      if (callLogResult['success'] != true) {
+        debugPrint('[ANSWERED] ⚠️ Call Log update failed: ${callLogResult['message']}');
+        debugPrint('[ANSWERED] callLogName: ${widget.callLogName}');
+      }
 
       // 2. Update Error Log
       await CallLogApi.updateCallLog(
