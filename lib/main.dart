@@ -2265,6 +2265,17 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
 
     if (!mounted) return;
 
+    // Update Call Log summary immediately
+    final callLogName = widget.data["call_log_name"]?.toString() ?? "";
+    final summaryText = result == 'connected' ? 'Connected' : 'Not Connected / Voicemail';
+    if (callLogName.isNotEmpty) {
+      debugPrint('[CALL] Updating Call Log summary: $callLogName → $summaryText');
+      CallLogDoctypeApi.updateCallLogSummary(
+        callLogName: callLogName,
+        summary: summaryText,
+      );
+    }
+
     if (result == 'connected') {
       await _showCallCompletionDialog(
         callDuration: callDuration,

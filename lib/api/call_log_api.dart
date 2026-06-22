@@ -454,6 +454,43 @@ class CallLogDoctypeApi {
   /// Updates the Call Log record in ERPNext.
   /// Uses callLogName to find the exact record (from get_pending_calls API).
   /// attended: true → Completed, false → No Answer
+  /// Updates only the summary field on a Call Log
+  static Future<void> updateCallLogSummary({
+    required String callLogName,
+    required String summary,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cookie = prefs.getString('cookie') ?? '';
+      if (cookie.isEmpty || callLogName.isEmpty) return;
+
+      final csrfResponse = await http.get(
+        Uri.parse('${AppConfig.baseUrl}/api/method/frappe.auth.get_csrf_token'),
+        headers: {'Cookie': cookie},
+      ).timeout(const Duration(seconds: 5));
+      String csrfToken = '';
+      if (csrfResponse.statusCode == 200) {
+        final csrfJson = jsonDecode(csrfResponse.body);
+        csrfToken = (csrfJson['message'] ?? '').toString();
+      }
+
+      final url = '${AppConfig.updateCallLogApi}/$callLogName';
+      final response = await http.put(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          'Cookie': cookie,
+          'X-Frappe-CSRF-Token': csrfToken,
+        },
+        body: jsonEncode({'summary': summary}),
+      ).timeout(const Duration(seconds: 10));
+
+      debugPrint('[CALL_LOG] Summary update $callLogName → $summary: ${response.statusCode}');
+    } catch (e) {
+      debugPrint('[CALL_LOG] Summary update error: $e');
+    }
+  }
+
   static Future<Map<String, dynamic>> updateCallLog({
     required String callLogName,
     required String mobileNo,
