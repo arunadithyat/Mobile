@@ -347,26 +347,55 @@ class MainActivity : FlutterActivity() {
         return sims
       }
 
+      // Primary: Use TelecomManager for PhoneAccountHandle IDs
       val telecomManager = getSystemService(Context.TELECOM_SERVICE) as TelecomManager
-      val accounts = telecomManager.callCapablePhoneAccounts
-
-      val subscriptionManager = getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as SubscriptionManager
-      val subscriptions = subscriptionManager.activeSubscriptionInfoList ?: emptyList()
-
-      for ((index, account) in accounts.withIndex()) {
-        val label = telecomManager.getPhoneAccount(account)?.label?.toString() ?: "SIM ${index + 1}"
-        val number = if (index < subscriptions.size) {
-          subscriptions[index].number ?: ""
-        } else ""
-
-        sims.add(mapOf(
-          "id" to account.id,
-          "label" to label,
-          "number" to number,
-          "slot" to (index + 1).toString()
-        ))
+      var accounts: List<PhoneAccountHandle> = emptyList()
+      try {
+        accounts = telecomManager.callCapablePhoneAccounts
+        println("[NATIVE] TelecomManager found ${accounts.size} account(s)")
+      } catch (e: Exception) {
+        println("[NATIVE] TelecomManager error: ${e.message}")
       }
-      println("[NATIVE] Found ${sims.size} SIM(s)")
+
+      // Get subscription info for labels and numbers
+      val subscriptionManager = getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as SubscriptionManager
+      val subscriptions = try {
+        subscriptionManager.activeSubscriptionInfoList ?: emptyList()
+      } catch (e: Exception) {
+        println("[NATIVE] SubscriptionManager error: ${e.message}")
+        emptyList()
+      }
+      println("[NATIVE] SubscriptionManager found ${subscriptions.size} subscription(s)")
+
+      if (accounts.isNotEmpty()) {
+        // Use TelecomManager accounts (preferred — has PhoneAccountHandle ID)
+        for ((index, account) in accounts.withIndex()) {
+          val phoneAccount = telecomManager.getPhoneAccount(account)
+          val label = phoneAccount?.label?.toString() ?: "SIM ${index + 1}"
+          val number = if (index < subscriptions.size) {
+            subscriptions[index].number ?: ""
+          } else ""
+
+          sims.add(mapOf(
+            "id" to account.id,
+            "label" to label,
+            "number" to number,
+            "slot" to (index + 1).toString()
+          ))
+        }
+      } else if (subscriptions.isNotEmpty()) {
+        // Fallback: Use SubscriptionManager (no PhoneAccountHandle, but has SIM info)
+        for ((index, sub) in subscriptions.withIndex()) {
+          sims.add(mapOf(
+            "id" to sub.subscriptionId.toString(),
+            "label" to (sub.carrierName?.toString() ?: "SIM ${index + 1}"),
+            "number" to (sub.number ?: ""),
+            "slot" to (sub.simSlotIndex + 1).toString()
+          ))
+        }
+      }
+
+      println("[NATIVE] Returning ${sims.size} SIM(s): $sims")
     } catch (e: Exception) {
       println("[NATIVE] getAvailableSims error: ${e.message}")
     }
