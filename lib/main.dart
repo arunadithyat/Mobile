@@ -2132,7 +2132,7 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
             ? callInfo['durationSeconds'] as int
             : int.tryParse(callInfo['durationSeconds']?.toString() ?? '0') ?? 0;
         if (mounted) {
-          await _showCallCompletionDialog(
+          await _showCallConfirmation(
             callDuration: Duration(seconds: durationSeconds),
             callStatus: callInfo['callStatus']?.toString() ?? 'Unknown',
             disconnectedStatus: callInfo['disconnectedStatus']?.toString() ?? 'unknown',
@@ -2146,7 +2146,7 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
         }
       } else {
         if (mounted) {
-          await _showCallCompletionDialog(
+          await _showCallConfirmation(
             dataSource: callInfo['dataSource']?.toString() ?? 'fallback',
             permissionGranted: callInfo['permissionGranted'] == true,
             retrievedAttempt: -1,
@@ -2154,7 +2154,7 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
         }
       }
     } else {
-      if (mounted) await _showCallCompletionDialog();
+      if (mounted) await _showCallConfirmation();
     }
     callStarted = false;
   }
@@ -2188,7 +2188,99 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
     return DateTime.now().difference(callStartTime!);
   }
 
+  /// Shows confirmation screen: Connected or Not Connected?
+  /// Routes to answered or unanswered dialog based on user choice.
   Future<void> _showCallCompletionDialog({
+    Duration callDuration = Duration.zero,
+    String? callStatus,
+    String? disconnectedStatus,
+    bool attended = false,
+    String dataSource = 'unknown',
+    bool permissionGranted = false,
+    int retrievedAttempt = -1,
+  }) async {
+    if (!mounted) return;
+    final mobileNo = widget.data["mobile_no"]?.toString() ?? "";
+    final customerName = widget.data["customer_name"]?.toString() ?? "Unknown";
+
+    final result = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.call_end, size: 48, color: Colors.orange),
+              const SizedBox(height: 12),
+              const Text("Call Ended",
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 6),
+              Text("$customerName · $mobileNo",
+                  style: TextStyle(fontSize: 15, color: Colors.grey[600])),
+              if (callDuration.inSeconds > 0) ...[
+                const SizedBox(height: 4),
+                Text("Duration: ${callDuration.inSeconds}s",
+                    style: TextStyle(fontSize: 14, color: Colors.grey[500])),
+              ],
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () => Navigator.pop(context, 'connected'),
+                  icon: const Icon(Icons.check_circle),
+                  label: const Text("Connected\nSpoke with customer",
+                      textAlign: TextAlign.center),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () => Navigator.pop(context, 'not_connected'),
+                  icon: const Icon(Icons.cancel),
+                  label: const Text("Not Connected\nVoicemail / Didn't answer",
+                      textAlign: TextAlign.center),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red.shade400,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (!mounted) return;
+
+    if (result == 'connected') {
+      await _showCallCompletionDialog(
+        callDuration: callDuration,
+        callStatus: callStatus,
+        disconnectedStatus: disconnectedStatus,
+        attended: true,
+        dataSource: dataSource,
+        permissionGranted: permissionGranted,
+        retrievedAttempt: retrievedAttempt,
+      );
+    } else {
+      _showUnansweredDialog();
+    }
+  }
+
+  Future<void> _showCallConfirmation({
     Duration? callDuration,
     String? callStatus,
     String? disconnectedStatus,
@@ -2456,7 +2548,7 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
       final mobileNo = widget.data["mobile_no"]?.toString() ?? "";
       if (mobileNo.isEmpty) {
         callStarted = false;
-        if (mounted) _showCallCompletionDialog();
+        if (mounted) _showCallConfirmation();
         return;
       }
 
@@ -2501,7 +2593,7 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
           if (mounted) _showUnansweredDialog();
         } else {
           if (mounted) {
-            _showCallCompletionDialog(
+            _showCallConfirmation(
               callDuration: Duration(seconds: durationSeconds),
               callStatus: callInfo['callStatus']?.toString(),
               disconnectedStatus: callInfo['disconnectedStatus']?.toString(),
@@ -2515,7 +2607,7 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
           }
         }
       } else {
-        if (mounted) _showCallCompletionDialog();
+        if (mounted) _showCallConfirmation();
       }
     });
   }
@@ -2523,7 +2615,7 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
   Future<void> _handleResumeAfterCall() async {
     final mobileNo = widget.data["mobile_no"]?.toString() ?? "";
     if (mobileNo.isEmpty) {
-      _showCallCompletionDialog();
+      _showCallConfirmation();
       return;
     }
 
@@ -2573,7 +2665,7 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
       }
 
       // Call was answered — show completion dialog
-      _showCallCompletionDialog(
+      _showCallConfirmation(
         callDuration: Duration(seconds: durationSeconds),
         callStatus: callInfo['callStatus']?.toString() ?? 'Unknown',
         disconnectedStatus: callInfo['disconnectedStatus']?.toString() ?? 'unknown',
@@ -2586,7 +2678,7 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
       );
     } else {
       // Could not determine outcome — show manual completion dialog
-      _showCallCompletionDialog(
+      _showCallConfirmation(
         dataSource: callInfo['dataSource']?.toString() ?? 'fallback',
         permissionGranted: callInfo['permissionGranted'] == true,
         retrievedAttempt: -1,
