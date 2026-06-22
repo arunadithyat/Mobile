@@ -2274,6 +2274,7 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
         dataSource: dataSource,
         permissionGranted: permissionGranted,
         retrievedAttempt: retrievedAttempt,
+        callOutcome: 'Connected',
       );
     } else {
       _showUnansweredDialog();
@@ -2288,6 +2289,7 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
     String dataSource = 'unknown',
     bool permissionGranted = false,
     int retrievedAttempt = -1,
+    String callOutcome = '',
   }) async {
     if (!mounted) return;
     final customerName = widget.data["customer_name"]?.toString() ?? "Unknown";

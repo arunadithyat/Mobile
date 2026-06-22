@@ -9,6 +9,7 @@ class AnsweredCallDialog extends StatefulWidget {
   final String leadName;       // CRM-LEAD-xxx or empty
   final String opportunityName; // CRM-OPP-xxx or empty
   final String callLogName;
+  final String callOutcome;
   final String customerName;
   final String mobileNo;
   final String doctype;
@@ -26,6 +27,7 @@ class AnsweredCallDialog extends StatefulWidget {
     this.leadName = '',
     this.opportunityName = '',
     required this.callLogName,
+    this.callOutcome = '',
     required this.customerName,
     required this.mobileNo,
     required this.doctype,
@@ -234,6 +236,7 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
         startTime: widget.initiatedTime,
         durationSeconds: widget.callDuration.inSeconds,
         attended: widget.attended,
+        summary: widget.callOutcome,
       );
       if (callLogResult['success'] != true) {
         debugPrint('[ANSWERED] ⚠️ Call Log update failed: ${callLogResult['message']}');

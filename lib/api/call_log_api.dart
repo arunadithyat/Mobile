@@ -461,6 +461,7 @@ class CallLogDoctypeApi {
     required DateTime startTime,
     required int durationSeconds,
     required bool attended,
+    String summary = '',
   }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -481,6 +482,7 @@ class CallLogDoctypeApi {
 
       final data = <String, dynamic>{
         'to': mobileNo,
+        if (summary.isNotEmpty) 'summary': summary,
         'type': 'Outgoing',
         'start_time': startTime.toIso8601String(),
         'end_time': endTime.toIso8601String(),
