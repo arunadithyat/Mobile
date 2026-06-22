@@ -2190,7 +2190,7 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
 
   /// Shows confirmation screen: Connected or Not Connected?
   /// Routes to answered or unanswered dialog based on user choice.
-  Future<void> _showCallCompletionDialog({
+  Future<void> _showCallConfirmation({
     Duration callDuration = Duration.zero,
     String? callStatus,
     String? disconnectedStatus,
@@ -2280,7 +2280,7 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
     }
   }
 
-  Future<void> _showCallConfirmation({
+  Future<void> _showCallCompletionDialog({
     Duration? callDuration,
     String? callStatus,
     String? disconnectedStatus,
