@@ -26,7 +26,7 @@ class AutoDialer {
     return true;
   }
 
-  static Future<bool> autoCall(String phoneNumber) async {
+  static Future<bool> autoCall(String phoneNumber, {String? simId}) async {
     if (!Platform.isAndroid && !Platform.isIOS) {
       debugPrint('[DIALER] Unsupported platform: ${Platform.operatingSystem}');
       return false;
@@ -37,12 +37,12 @@ class AutoDialer {
     }
 
     final cleanedNumber = _cleanNumber(phoneNumber);
-    debugPrint('[DIALER] 📞 Auto-dialing: $cleanedNumber');
+    debugPrint('[DIALER] 📞 Auto-dialing: $cleanedNumber${simId != null ? " (SIM: $simId)" : ""}');
 
     try {
       final result = await _channel.invokeMethod<bool>(
         'autoCall',
-        {'phoneNumber': cleanedNumber},
+        {'phoneNumber': cleanedNumber, 'simId': simId},
       );
 
       if (result == true) {
@@ -59,6 +59,23 @@ class AutoDialer {
     } catch (e) {
       debugPrint('[DIALER] ❌ Auto-dial error: $e');
       return await openDialer(cleanedNumber);
+    }
+  }
+
+  /// Returns list of available SIMs on the device.
+  /// Each SIM: {id, label, number, slot}
+  static Future<List<Map<String, String>>> getAvailableSims() async {
+    if (!Platform.isAndroid) return [];
+    try {
+      final result = await _channel.invokeMethod<List<dynamic>>('getAvailableSims');
+      if (result == null) return [];
+      return result
+          .whereType<Map>()
+          .map((m) => Map<String, String>.from(m.map((k, v) => MapEntry(k.toString(), v.toString()))))
+          .toList();
+    } catch (e) {
+      debugPrint('[DIALER] ❌ getAvailableSims error: $e');
+      return [];
     }
   }
 

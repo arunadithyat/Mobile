@@ -5,9 +5,13 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.provider.CallLog
+import android.telecom.PhoneAccountHandle
+import android.telecom.TelecomManager
 import android.telephony.PhoneNumberUtils
 import android.telephony.PhoneStateListener
+import android.telephony.SubscriptionManager
 import android.telephony.TelephonyManager
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -37,7 +41,11 @@ class MainActivity : FlutterActivity() {
       when (call.method) {
         "autoCall" -> {
           val phoneNumber = call.argument<String>("phoneNumber") ?: ""
-          result.success(startCall(phoneNumber))
+          val simId = call.argument<String>("simId")
+          result.success(startCall(phoneNumber, simId))
+        }
+        "getAvailableSims" -> {
+          result.success(getAvailableSims())
         }
         "openDialer" -> {
           val phoneNumber = call.argument<String>("phoneNumber") ?: ""
@@ -299,16 +307,70 @@ class MainActivity : FlutterActivity() {
     }
   }
 
-  private fun startCall(phoneNumber: String): Boolean {
+  private fun startCall(phoneNumber: String, simId: String? = null): Boolean {
     return try {
       val intent = Intent(Intent.ACTION_CALL, Uri.parse("tel:$phoneNumber"))
       intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+      // If SIM ID provided, set PhoneAccountHandle to skip SIM chooser
+      if (simId != null && simId.isNotEmpty()) {
+        try {
+          val telecomManager = getSystemService(Context.TELECOM_SERVICE) as TelecomManager
+          if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED) {
+            val accounts = telecomManager.callCapablePhoneAccounts
+            for (account in accounts) {
+              if (account.id == simId) {
+                intent.putExtra("android.telecom.extra.PHONE_ACCOUNT_HANDLE", account)
+                println("[NATIVE] Using SIM: $simId")
+                break
+              }
+            }
+          }
+        } catch (e: Exception) {
+          println("[NATIVE] SIM selection error (falling back): ${e.message}")
+        }
+      }
+
       startActivity(intent)
       true
     } catch (e: Exception) {
       e.printStackTrace()
       false
     }
+  }
+
+  private fun getAvailableSims(): List<Map<String, String>> {
+    val sims = mutableListOf<Map<String, String>>()
+    try {
+      if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
+        println("[NATIVE] READ_PHONE_STATE not granted — can't list SIMs")
+        return sims
+      }
+
+      val telecomManager = getSystemService(Context.TELECOM_SERVICE) as TelecomManager
+      val accounts = telecomManager.callCapablePhoneAccounts
+
+      val subscriptionManager = getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as SubscriptionManager
+      val subscriptions = subscriptionManager.activeSubscriptionInfoList ?: emptyList()
+
+      for ((index, account) in accounts.withIndex()) {
+        val label = telecomManager.getPhoneAccount(account)?.label?.toString() ?: "SIM ${index + 1}"
+        val number = if (index < subscriptions.size) {
+          subscriptions[index].number ?: ""
+        } else ""
+
+        sims.add(mapOf(
+          "id" to account.id,
+          "label" to label,
+          "number" to number,
+          "slot" to (index + 1).toString()
+        ))
+      }
+      println("[NATIVE] Found ${sims.size} SIM(s)")
+    } catch (e: Exception) {
+      println("[NATIVE] getAvailableSims error: ${e.message}")
+    }
+    return sims
   }
 
   private fun openDialer(phoneNumber: String): Boolean {

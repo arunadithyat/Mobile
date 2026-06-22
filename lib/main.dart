@@ -317,6 +317,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   String token = "";
   // Opportunities removed — queue is the main data source
   bool _isPaused = false;
+  String? _preferredSimId;
   StreamSubscription<String>? _tokenRefreshSub;
   StreamSubscription<Map<String, dynamic>>? _notificationSub;
   // Fix #2 & #7: Thread-safe duplicate detection with Set<String>
@@ -352,6 +353,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
     // Load queue FIRST so user sees data immediately
     _refreshQueueDisplay();
+
+    // Load SIM preference
+    final simPref = prefs.getString('preferred_sim_id');
+    if (simPref != null && simPref.isNotEmpty) {
+      _preferredSimId = simPref;
+      debugPrint('[SIM] Loaded preferred SIM: $_preferredSimId');
+    }
 
     // Restore pending dialog if app was killed during post-call update
     await _restorePendingDialog();
@@ -1163,6 +1171,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     await prefs.remove('last_incoming_sync');
     await prefs.remove('call_history');
     await prefs.remove('pending_dialog');
+    await prefs.remove('preferred_sim_id');
 
     await LoginApi.logout();
     if (!mounted) return;
@@ -1228,6 +1237,84 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               ),
               child: const Text("OK, Close App"),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showSimPicker() async {
+    final sims = await AutoDialer.getAvailableSims();
+    if (sims.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("No SIMs found on this device")),
+        );
+      }
+      return;
+    }
+    if (sims.length == 1) {
+      // Single SIM — auto-select
+      final sim = sims[0];
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('preferred_sim_id', sim['id'] ?? '');
+      setState(() => _preferredSimId = sim['id']);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Using ${sim['label']} for all calls")),
+        );
+      }
+      return;
+    }
+    if (!mounted) return;
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text("Select Calling SIM",
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 6),
+            const Text("All calls will use the selected SIM",
+                style: TextStyle(fontSize: 14, color: Colors.grey)),
+            const SizedBox(height: 16),
+            ...sims.map((sim) {
+              final isSelected = _preferredSimId == sim['id'];
+              return ListTile(
+                leading: Icon(
+                  Icons.sim_card,
+                  color: isSelected ? Colors.blue : Colors.grey,
+                  size: 30,
+                ),
+                title: Text(sim['label'] ?? 'SIM ${sim['slot']}',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    )),
+                subtitle: Text(sim['number'] ?? '',
+                    style: const TextStyle(fontSize: 14)),
+                trailing: isSelected
+                    ? const Icon(Icons.check_circle, color: Colors.blue)
+                    : null,
+                onTap: () async {
+                  final prefs = await SharedPreferences.getInstance();
+                  await prefs.setString('preferred_sim_id', sim['id'] ?? '');
+                  setState(() => _preferredSimId = sim['id']);
+                  if (ctx.mounted) Navigator.pop(ctx);
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text("Using ${sim['label']} for all calls")),
+                    );
+                  }
+                },
+              );
+            }),
+            const SizedBox(height: 8),
           ],
         ),
       ),
@@ -1312,6 +1399,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             title: const Text('Back to Home'),
             onTap: () {
               Navigator.pop(context);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.sim_card, color: Colors.blue),
+            title: const Text('Select Calling SIM'),
+            subtitle: Text(_preferredSimId != null ? 'SIM configured' : 'Not set'),
+            onTap: () {
+              Navigator.pop(context);
+              _showSimPicker();
             },
           ),
           ListTile(
@@ -2248,7 +2344,8 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
       debugPrint("[CALL] Failed to log initiation: $e");
     }
 
-    final success = await AutoDialer.autoCall(mobileNo);
+    final simId = widget.data['preferred_sim_id']?.toString();
+    final success = await AutoDialer.autoCall(mobileNo, simId: simId);
     callStarted = success;
 
     if (!success) {
