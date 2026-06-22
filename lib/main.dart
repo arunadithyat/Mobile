@@ -355,6 +355,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _refreshQueueDisplay();
 
     // Load SIM preference
+    final prefs = await SharedPreferences.getInstance();
     final simPref = prefs.getString('preferred_sim_id');
     if (simPref != null && simPref.isNotEmpty) {
       _preferredSimId = simPref;
