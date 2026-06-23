@@ -88,10 +88,11 @@ class MainActivity : FlutterActivity() {
         }
         "getIncomingCallsSince" -> {
           val sinceMs = call.argument<Number>("sinceMs")?.toLong() ?: 0L
+          val simId = call.argument<String>("simId")
           if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALL_LOG) != PackageManager.PERMISSION_GRANTED) {
             result.success(emptyList<Map<String, Any>>())
           } else {
-            result.success(getIncomingCallsSince(sinceMs))
+            result.success(getIncomingCallsSince(sinceMs, simId))
           }
         }
         else -> result.notImplemented()
@@ -178,20 +179,30 @@ class MainActivity : FlutterActivity() {
 
   /// Returns incoming + missed + rejected calls since the given timestamp,
   /// newest first, capped at 100 entries.
-  private fun getIncomingCallsSince(sinceMs: Long): List<Map<String, Any>> {
-    val projection = arrayOf(CallLog.Calls.NUMBER, CallLog.Calls.TYPE, CallLog.Calls.DURATION, CallLog.Calls.DATE)
-    val selection = "${CallLog.Calls.DATE} > ? AND ${CallLog.Calls.TYPE} IN (?, ?, ?)"
-    val selectionArgs = arrayOf(
+  /// If simId is provided, only returns calls from that SIM.
+  private fun getIncomingCallsSince(sinceMs: Long, simId: String? = null): List<Map<String, Any>> {
+    val projection = arrayOf(CallLog.Calls.NUMBER, CallLog.Calls.TYPE, CallLog.Calls.DURATION, CallLog.Calls.DATE, CallLog.Calls.PHONE_ACCOUNT_ID)
+    
+    var selection = "${CallLog.Calls.DATE} > ? AND ${CallLog.Calls.TYPE} IN (?, ?, ?)"
+    val args = mutableListOf(
       sinceMs.toString(),
       CallLog.Calls.INCOMING_TYPE.toString(),
       CallLog.Calls.MISSED_TYPE.toString(),
       CallLog.Calls.REJECTED_TYPE.toString(),
     )
+    
+    // Filter by SIM if configured
+    if (simId != null && simId.isNotEmpty()) {
+      selection += " AND ${CallLog.Calls.PHONE_ACCOUNT_ID} = ?"
+      args.add(simId)
+      println("[NATIVE] Filtering incoming calls by SIM: $simId")
+    }
+    
     val cursor = contentResolver.query(
       CallLog.Calls.CONTENT_URI,
       projection,
       selection,
-      selectionArgs,
+      args.toTypedArray(),
       "${CallLog.Calls.DATE} DESC"
     )
 

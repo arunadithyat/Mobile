@@ -231,13 +231,13 @@ class AutoDialer {
   /// Returns the device's incoming/missed/rejected calls since [since].
   /// Each entry: {number, type, durationSeconds, timestamp, attended}
   static Future<List<Map<String, dynamic>>> getIncomingCallsSince(
-    DateTime since,
+    DateTime since, {String? simId}
   ) async {
     if (!Platform.isAndroid) return [];
     try {
       final result = await _channel.invokeMethod<List<dynamic>>(
         'getIncomingCallsSince',
-        {'sinceMs': since.millisecondsSinceEpoch},
+        {'sinceMs': since.millisecondsSinceEpoch, 'simId': simId},
       );
       if (result == null) return [];
       return result

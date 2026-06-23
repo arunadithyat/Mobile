@@ -318,6 +318,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   // Opportunities removed — queue is the main data source
   bool _isPaused = false;
   String? _preferredSimId;
+  Set<String> _incomingCompletedNumbers = {};
   StreamSubscription<String>? _tokenRefreshSub;
   StreamSubscription<Map<String, dynamic>>? _notificationSub;
   // Fix #2 & #7: Thread-safe duplicate detection with Set<String>
@@ -388,7 +389,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           ? DateTime.fromMillisecondsSinceEpoch(lastSyncMs)
           : DateTime.now().subtract(const Duration(hours: 24));
 
-      final calls = await AutoDialer.getIncomingCallsSince(since);
+      final calls = await AutoDialer.getIncomingCallsSince(since, simId: _preferredSimId);
       debugPrint("[INCOMING_SYNC] Found ${calls.length} incoming call(s) since $since");
       if (calls.isEmpty) {
         await prefs.setInt('last_incoming_sync', DateTime.now().millisecondsSinceEpoch);
@@ -425,6 +426,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               status = 'Rejected';
             } else if (attended && durationSeconds > 0) {
               status = 'Customer Called Back';
+              // Track for 📝 Update Call button
+              _incomingCompletedNumbers.add(_last10(item.mobileNo));
             } else {
               status = 'Missed Call';
             }
@@ -470,6 +473,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       }
 
       debugPrint("[INCOMING_SYNC] ✅ $matched matched out of ${calls.length} incoming calls");
+
+      // Update completed incoming numbers for 📝 button display
+      if (mounted) setState(() {});
 
       // Also sync to backend
       final ok = await IncomingCallSyncApi.syncIncomingCalls(calls);
@@ -1244,6 +1250,37 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
+  /// Opens post-call dialog for incoming completed call
+  Future<void> _showIncomingCallUpdate(CallQueueItem call) async {
+    if (!mounted) return;
+
+    final leadName = call.lead;
+    final opportunityName = call.opportunity;
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AnsweredCallDialog(
+        leadName: leadName,
+        opportunityName: opportunityName,
+        callLogName: call.callLogName,
+        callOutcome: 'Connected',
+        customerName: call.customerName,
+        mobileNo: call.mobileNo,
+        doctype: call.isOpportunity ? 'Opportunity' : 'Lead',
+        docname: call.isOpportunity ? opportunityName : leadName,
+        callDuration: Duration.zero,
+        attended: true,
+        calledAt: DateTime.now(),
+        initiatedTime: DateTime.now(),
+      ),
+    );
+
+    // After dialog closes, remove from completed set and refresh queue
+    _incomingCompletedNumbers.remove(_last10(call.mobileNo));
+    await _refreshQueueDisplay();
+  }
+
   Future<void> _showSimPicker() async {
     final sims = await AutoDialer.getAvailableSims();
     if (sims.isEmpty) {
@@ -1846,6 +1883,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                           tooltip: "Call now",
                           onPressed: () =>
                               _processQueuedCallAt(entry.value.key),
+                        ),
+                      // Update Call button — shown when incoming call completed
+                      if (_incomingCompletedNumbers.contains(_last10(call.mobileNo)))
+                        IconButton(
+                          icon: const Icon(Icons.edit_note,
+                              size: 28, color: Colors.deepPurple),
+                          tooltip: "Update Call",
+                          onPressed: () => _showIncomingCallUpdate(call),
                         ),
                       IconButton(
                         icon: const Icon(Icons.message,
