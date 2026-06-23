@@ -1271,7 +1271,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         docname: call.isOpportunity ? opportunityName : leadName,
         callDuration: Duration.zero,
         attended: true,
-        calledAt: DateTime.now(),
         initiatedTime: DateTime.now(),
       ),
     );
