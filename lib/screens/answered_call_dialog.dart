@@ -118,8 +118,6 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
         _status = (values['status'] ?? '').toString();
         _opportunityAmount = (values['opportunity_amount'] ?? '').toString();
         _amountController.text = _opportunityAmount;
-        final followUp = (values['custom_next_followup_date1'] ?? '').toString();
-        if (followUp.isNotEmpty) _followUpDate = DateTime.tryParse(followUp);
         final expClose = (values['expected_closing'] ?? '').toString();
         if (expClose.isNotEmpty) _expectedClosing = DateTime.tryParse(expClose);
         _loading = false;
@@ -142,8 +140,6 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
         _customerType = (values['custom_customer_type'] ?? '').toString();
         _district = (values['custom_district'] ?? '').toString();
         _cityTown = (values['custom_citytown'] ?? '').toString();
-        final followUp = (values['custom_next_followup_date1'] ?? '').toString();
-        if (followUp.isNotEmpty) _followUpDate = DateTime.tryParse(followUp);
         _loading = false;
       });
     }
