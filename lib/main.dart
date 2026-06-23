@@ -318,6 +318,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   // Opportunities removed — queue is the main data source
   bool _isPaused = false;
   String? _preferredSimId;
+  Timer? _queueRefreshTimer;
   Set<String> _incomingCompletedNumbers = {};
   Set<String> _handledIncomingKeys = {};
   String _handledIncomingKeysName = 'handled_incoming_calls';
@@ -356,6 +357,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
     // Load queue FIRST so user sees data immediately
     _refreshQueueDisplay();
+
+    // Start periodic queue refresh every 10 minutes
+    _queueRefreshTimer?.cancel();
+    _queueRefreshTimer = Timer.periodic(const Duration(minutes: 10), (_) {
+      debugPrint('[QUEUE] ⏰ Periodic refresh (10 min)');
+      _refreshQueueDisplay();
+    });
 
     // Load SIM preference + handled incoming numbers
     final prefs = await SharedPreferences.getInstance();
@@ -1482,14 +1490,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.resumed) {
-      _syncIncomingDeviceCalls();
-      // No queue refresh or auto-call on resume
+      _refreshQueueDisplay().then((_) {
+        _syncIncomingDeviceCalls();
+      });
     }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _queueRefreshTimer?.cancel();
     _tokenRefreshSub?.cancel();
     _notificationSub?.cancel();
     super.dispose();
