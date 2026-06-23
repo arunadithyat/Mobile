@@ -2604,23 +2604,10 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
 
       if (!callStarted) return;
 
-      if (pausedDuration < const Duration(seconds: 2)) {
-        // User cancelled quickly on dialpad — treat as skip, go back to queue
-        debugPrint('[CALL] Quick resume — dialpad cancel detected, returning to queue');
-        timer?.cancel();
-        callDurationTimer?.cancel();
-        callStarted = false;
-        callTriggered = false;
-        if (mounted) Navigator.pop(context, {'status': 'cancelled'});
-      } else {
-        // User came back to app — call might still be active.
-        // Wait a moment then check device call log to detect if call ended.
-        // This handles both: user still on call (no dialog) and
-        // call ended while backgrounded (CALL_ENDED event missed).
-        debugPrint('[CALL] Resume — checking if call is still active...');
-        _wasBackgroundedDuringCall = false;
-        _pollForCallEnd();
-      }
+      // User came back — poll for call end regardless of how quickly
+      debugPrint('[CALL] Resume — checking if call is still active...');
+      _wasBackgroundedDuringCall = false;
+      _pollForCallEnd();
     }
   }
 
