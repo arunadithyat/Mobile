@@ -318,6 +318,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   // Opportunities removed — queue is the main data source
   bool _isPaused = false;
   String? _preferredSimId;
+  String _statusFilter = 'All Status';
+  static const _statusFilterOptions = ['All Status', 'Lead', 'Demo', 'Followup', 'Quotation', 'Prospect', 'Pipeline', 'RNR'];
   Timer? _queueRefreshTimer;
   Map<String, int> _incomingCompletedCalls = {};  // number → call timestamp ms
   Set<String> _handledIncomingKeys = {};
@@ -1314,6 +1316,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     await _refreshQueueDisplay();
   }
 
+  Color _statusColor(String status) {
+    switch (status) {
+      case 'Lead': return Colors.green;
+      case 'Demo': return Colors.teal;
+      case 'Followup': return Colors.blue;
+      case 'Quotation': return Colors.indigo;
+      case 'Prospect': return Colors.purple;
+      case 'Pipeline': return Colors.orange;
+      case 'RNR': return Colors.red;
+      default: return Colors.grey;
+    }
+  }
+
   Future<void> _showSimPicker() async {
     final sims = await AutoDialer.getAvailableSims();
     if (sims.isEmpty) {
@@ -1833,6 +1848,27 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             Text("Call Queue (${all.length})",
                 style: const TextStyle(
                     fontSize: 19, fontWeight: FontWeight.bold)),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey.shade400),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: _statusFilter,
+                  isDense: true,
+                  style: const TextStyle(fontSize: 13, color: Colors.black87),
+                  items: _statusFilterOptions.map((s) => DropdownMenuItem(
+                    value: s,
+                    child: Text(s, style: const TextStyle(fontSize: 13)),
+                  )).toList(),
+                  onChanged: (v) {
+                    if (v != null) setState(() => _statusFilter = v);
+                  },
+                ),
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 8),
@@ -1901,6 +1937,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                       fontSize: 14,
                                       color: Colors.blue.shade700,
                                       fontWeight: FontWeight.w500)),
+                            if (call.callStatus.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: _statusColor(call.callStatus).withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: _statusColor(call.callStatus), width: 0.8),
+                                  ),
+                                  child: Text(call.callStatus,
+                                      style: TextStyle(fontSize: 11, color: _statusColor(call.callStatus), fontWeight: FontWeight.w600)),
+                                ),
+                              ),
                             if (call.isOpportunity && call.opportunityAmount.isNotEmpty && call.opportunityAmount != '0' && call.opportunityAmount != '0.0')
                               Text("₹ ${call.opportunityAmount}",
                                   style: TextStyle(

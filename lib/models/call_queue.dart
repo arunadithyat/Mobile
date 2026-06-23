@@ -13,6 +13,7 @@ class CallQueueItem {
   final DateTime queuedAt;
   final String autoCall;
   final String category;
+  final String callStatus; // lead_status or opportunity_status
   CallQueueStatus status;
 
   CallQueueItem({
@@ -28,6 +29,7 @@ class CallQueueItem {
     required this.queuedAt,
     this.autoCall = "1",
     this.category = "Hot Leads",
+    this.callStatus = '',
     this.status = CallQueueStatus.pending,
   });
 
@@ -60,6 +62,7 @@ class CallQueueItem {
       'opportunity_amount': opportunityAmount,
       'auto_call': autoCall,
       'category': category,
+      'call_status': callStatus,
       'queued_at': queuedAt.toIso8601String(),
       'status': status.name,
     };
@@ -83,6 +86,7 @@ class CallQueueItem {
       opportunityAmount: (data['opportunity_amount'] ?? '').toString(),
       queuedAt: _parseDateTime(data),
       autoCall: data['auto_call'] ?? '1',
+      callStatus: (data['lead_status'] ?? data['opportunity_status'] ?? '').toString(),
       category: _resolveCategory(data, doctype),
       status: data['status'] == 'cancelled'
           ? CallQueueStatus.cancelled
