@@ -319,7 +319,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool _isPaused = false;
   String? _preferredSimId;
   Timer? _queueRefreshTimer;
-  Set<String> _incomingCompletedNumbers = {};
+  Map<String, int> _incomingCompletedCalls = {};  // number → call timestamp ms
   Set<String> _handledIncomingKeys = {};
   String _handledIncomingKeysName = 'handled_incoming_calls';
   StreamSubscription<String>? _tokenRefreshSub;
@@ -440,10 +440,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             } else if (attended && durationSeconds > 0) {
               status = 'Customer Called Back';
               // Track for 📝 Update Call button (skip already handled)
-              final today = DateTime.now().toIso8601String().split('T')[0];
-              final incomingKey = '${today}_${_last10(item.mobileNo)}';
-              if (!_handledIncomingKeys.contains(incomingKey)) {
-                _incomingCompletedNumbers.add(_last10(item.mobileNo));
+              final callTs = timestamp.millisecondsSinceEpoch;
+              final handledKey = '${_last10(item.mobileNo)}_${item.callLogName}_$callTs';
+              if (!_handledIncomingKeys.contains(handledKey)) {
+                // Store latest call timestamp per number
+                final num10 = _last10(item.mobileNo);
+                final existing = _incomingCompletedCalls[num10] ?? 0;
+                if (callTs > existing) {
+                  _incomingCompletedCalls[num10] = callTs;
+                }
               }
             } else {
               status = 'Missed Call';
@@ -1294,9 +1299,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
 
     // After dialog closes, mark as handled so it won't reappear
-    _incomingCompletedNumbers.remove(_last10(call.mobileNo));
-    final today = DateTime.now().toIso8601String().split('T')[0];
-    final handledKey = '${today}_${_last10(call.mobileNo)}';
+    final num10 = _last10(call.mobileNo);
+    final callTs = _incomingCompletedCalls[num10] ?? 0;
+    _incomingCompletedCalls.remove(num10);
+    final handledKey = '${num10}_${call.callLogName}_$callTs';
     _handledIncomingKeys.add(handledKey);
     final prefs = await SharedPreferences.getInstance();
     final handledList = _handledIncomingKeys.toList();
@@ -1922,7 +1928,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     ],
                   ),
                   // Update Call button — below card, shown when incoming call completed
-                  if (_incomingCompletedNumbers.contains(_last10(call.mobileNo)))
+                  if (_incomingCompletedCalls.containsKey(_last10(call.mobileNo)))
                     Padding(
                       padding: const EdgeInsets.only(top: 4, left: 28),
                       child: SizedBox(
