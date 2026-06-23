@@ -1853,8 +1853,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 final call = entry.value.value;
                 return Padding(
                   padding: const EdgeInsets.symmetric(vertical: 2),
-                  child: Row(
+                  child: Column(
                     children: [
+                      Row(
+                        children: [
                       SizedBox(
                         width: 28,
                         child: Text("${entry.key + 1}.",
@@ -1893,26 +1895,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       Text(call.mobileNo,
                           style: TextStyle(
                               fontSize: 15, color: Colors.grey[700])),
-                      // Update Call button — below number, shown when incoming call completed
-                      if (_incomingCompletedNumbers.contains(_last10(call.mobileNo)))
-                        Padding(
-                          padding: const EdgeInsets.only(top: 6),
-                          child: SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton.icon(
-                              onPressed: () => _showIncomingCallUpdate(call),
-                              icon: const Icon(Icons.edit_note, size: 20),
-                              label: const Text("Update Call"),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.deepPurple,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(vertical: 8),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                              ),
-                            ),
-                          ),
-                        ),
                       if (!_isPaused)
                         IconButton(
                           icon: const Icon(Icons.call,
@@ -1928,6 +1910,28 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                         onPressed: () => _showMessageSheet(call),
                       ),
                     ],
+                  ),
+                  // Update Call button — below card, shown when incoming call completed
+                  if (_incomingCompletedNumbers.contains(_last10(call.mobileNo)))
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4, left: 28),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () => _showIncomingCallUpdate(call),
+                          icon: const Icon(Icons.edit_note, size: 20),
+                          label: const Text("Update Call"),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.deepPurple,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                   ),
                 );
               }),
