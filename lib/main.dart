@@ -319,6 +319,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool _isPaused = false;
   String? _preferredSimId;
   String _statusFilter = 'All Status';
+  String _userFullName = '';
+  String _userImage = '';
+  String _appVersion = '';
+  String _buildNumber = '';
   static const _statusFilterOptions = ['All Status', 'Lead', 'Demo', 'Followup', 'Quotation', 'Prospect', 'Pipeline', 'RNR'];
   Timer? _queueRefreshTimer;
   Map<String, int> _incomingCompletedCalls = {};  // number → call timestamp ms
@@ -377,6 +381,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _preferredSimId = simPref;
       debugPrint('[SIM] Loaded preferred SIM: $_preferredSimId');
     }
+
+    // Fetch user info + app version
+    await _loadUserProfile();
 
     // Restore pending dialog if app was killed during post-call update
     await _restorePendingDialog();
@@ -1316,6 +1323,47 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     await _refreshQueueDisplay();
   }
 
+  Future<void> _loadUserProfile() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cookie = prefs.getString('cookie') ?? '';
+      if (cookie.isEmpty) return;
+
+      // Get logged in user email
+      final userEmail = cookie.contains('user_id=')
+          ? cookie.split('user_id=').last.split(';').first
+          : '';
+      if (userEmail.isEmpty) return;
+
+      final response = await http.get(
+        Uri.parse('${AppConfig.baseUrl}/api/resource/User/$userEmail?fields=["full_name","user_image"]'),
+        headers: {'Cookie': cookie},
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final json = jsonDecode(response.body);
+        final data = json['data'];
+        if (data is Map<String, dynamic>) {
+          _userFullName = (data['full_name'] ?? '').toString();
+          _userImage = (data['user_image'] ?? '').toString();
+          if (_userImage.isNotEmpty && !_userImage.startsWith('http')) {
+            _userImage = '${AppConfig.baseUrl}$_userImage';
+          }
+        }
+      }
+
+      // App version
+      final packageInfo = await PackageInfo.fromPlatform();
+      _appVersion = packageInfo.version;
+      _buildNumber = packageInfo.buildNumber;
+
+      if (mounted) setState(() {});
+      debugPrint('[PROFILE] $_userFullName | image: ${_userImage.isNotEmpty}');
+    } catch (e) {
+      debugPrint('[PROFILE] Error: $e');
+    }
+  }
+
   Color _statusColor(String status) {
     switch (status) {
       case 'Lead': return Colors.green;
@@ -1503,6 +1551,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               Navigator.pop(context); // close drawer
               logout();
             },
+          ),
+              ],
+            ),
+          ),
+          // App version at bottom
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Center(
+              child: Text(
+                'v$_appVersion (build $_buildNumber)',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+              ),
+            ),
           ),
         ],
       ),
