@@ -2101,6 +2101,10 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
   Timer? callDurationTimer;
   Timer? _pollTimer;
 
+  // Previous comments/notes
+  List<Map<String, dynamic>> _comments = [];
+  bool _commentsLoading = true;
+
   static const EventChannel _callStateChannel = EventChannel('lead_calling/call_state');
   StreamSubscription? _callStateSubscription;
   bool _hasListenerSetup = false;
@@ -2153,6 +2157,27 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
     startCountdown();
     WidgetsBinding.instance.addObserver(this);
     _setupCallStateListener();
+    _fetchComments();
+  }
+
+  Future<void> _fetchComments() async {
+    final callLogName = widget.data['call_log_name']?.toString() ?? '';
+    if (callLogName.isEmpty) {
+      if (mounted) setState(() => _commentsLoading = false);
+      return;
+    }
+    try {
+      final notes = await CallLogApi.getComments(callLogName);
+      if (mounted) {
+        setState(() {
+          _comments = notes;
+          _commentsLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('[COMMENTS] Fetch error: $e');
+      if (mounted) setState(() => _commentsLoading = false);
+    }
   }
 
   void _setupCallStateListener() {
