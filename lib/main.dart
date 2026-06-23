@@ -1829,10 +1829,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       );
     }
 
+    // Apply status filter
+    final filteredAll = _statusFilter == 'All Status'
+        ? all
+        : all.where((item) => item.callStatus == _statusFilter).toList();
+
     // Group by category, preserving overall queue order inside each group
     final grouped = <String, List<MapEntry<int, CallQueueItem>>>{};
-    for (int i = 0; i < all.length; i++) {
-      grouped.putIfAbsent(all[i].category, () => []).add(MapEntry(i, all[i]));
+    for (int i = 0; i < filteredAll.length; i++) {
+      grouped.putIfAbsent(filteredAll[i].category, () => []).add(MapEntry(i, filteredAll[i]));
     }
     final orderedCats = [
       ..._kpiCategories.where(grouped.containsKey),
