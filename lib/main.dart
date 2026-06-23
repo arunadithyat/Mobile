@@ -2807,60 +2807,124 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
           title: const Text("Incoming Call"),
           automaticallyImplyLeading: false, // always hide back arrow
         ),
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.call, size: 80, color: Colors.green),
-              const SizedBox(height: 20),
-              Text(
-                widget.data["customer_name"] ?? "Incoming Call",
-                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+        body: Column(
+          children: [
+            // Call info — existing layout, untouched
+            Padding(
+              padding: const EdgeInsets.only(top: 40),
+              child: Column(
+                children: [
+                  const Icon(Icons.call, size: 80, color: Colors.green),
+                  const SizedBox(height: 20),
+                  Text(
+                    widget.data["customer_name"] ?? "Incoming Call",
+                    style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    widget.data["mobile_no"] ?? "Unknown",
+                    style: const TextStyle(fontSize: 18, color: Colors.grey),
+                  ),
+                  const SizedBox(height: 20),
+                  if (!callTriggered)
+                    Text(
+                      "Calling in $countdown...",
+                      style: const TextStyle(
+                        fontSize: 18,
+                        color: Colors.blue,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    )
+                  else
+                    Text(
+                      callStarted ? "On Call..." : "Launching call...",
+                      style: TextStyle(
+                        fontSize: 18,
+                        color: callStarted ? Colors.green : Colors.blue,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  // Cancel only during countdown — hidden after call starts
+                  if (!callTriggered) ...[
+                    const SizedBox(height: 20),
+                    ElevatedButton(
+                      onPressed: () {
+                        timer?.cancel();
+                        callDurationTimer?.cancel();
+                        _callStateSubscription?.cancel();
+                        Navigator.pop(context, {'status': 'cancelled'});
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 16),
+                      ),
+                      child: const Text("Cancel"),
+                    ),
+                  ],
+                ],
               ),
-              const SizedBox(height: 10),
-              Text(
-                widget.data["mobile_no"] ?? "Unknown",
-                style: const TextStyle(fontSize: 18, color: Colors.grey),
+            ),
+            const SizedBox(height: 16),
+            // Previous Notes section
+            Expanded(
+              child: Container(
+                margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+                      child: Row(
+                        children: [
+                          Icon(Icons.notes, size: 18, color: Colors.grey.shade600),
+                          const SizedBox(width: 6),
+                          Text("Previous Notes",
+                              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.grey.shade700)),
+                          const Spacer(),
+                          if (!_commentsLoading)
+                            Text("${_comments.length}", style: TextStyle(fontSize: 13, color: Colors.grey.shade500)),
+                        ],
+                      ),
+                    ),
+                    Divider(height: 1, color: Colors.grey.shade200),
+                    Expanded(
+                      child: _commentsLoading
+                          ? const Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)))
+                          : _comments.isEmpty
+                              ? Center(child: Text("No previous notes", style: TextStyle(color: Colors.grey.shade400, fontSize: 14)))
+                              : ListView.separated(
+                                  padding: const EdgeInsets.all(12),
+                                  itemCount: _comments.length,
+                                  separatorBuilder: (_, __) => Divider(height: 16, color: Colors.grey.shade200),
+                                  itemBuilder: (_, i) {
+                                    final note = _comments[i];
+                                    final text = note['note']?.toString() ?? '';
+                                    final owner = (note['owner']?.toString() ?? '').split('@').first;
+                                    final creation = note['creation']?.toString() ?? '';
+                                    final date = creation.length >= 10 ? creation.substring(5, 10).replaceAll('-', '/') : '';
+                                    return Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(text, style: const TextStyle(fontSize: 14)),
+                                        const SizedBox(height: 4),
+                                        Text("$date — $owner",
+                                            style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                                      ],
+                                    );
+                                  },
+                                ),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 40),
-              if (!callTriggered)
-                Text(
-                  "Calling in $countdown...",
-                  style: const TextStyle(
-                    fontSize: 18,
-                    color: Colors.blue,
-                    fontWeight: FontWeight.w600,
-                  ),
-                )
-              else
-                Text(
-                  callStarted ? "On Call..." : "Launching call...",
-                  style: TextStyle(
-                    fontSize: 18,
-                    color: callStarted ? Colors.green : Colors.blue,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              // Cancel only during countdown — hidden after call starts
-              if (!callTriggered) ...[
-                const SizedBox(height: 40),
-                ElevatedButton(
-                  onPressed: () {
-                    timer?.cancel();
-                    callDurationTimer?.cancel();
-                    _callStateSubscription?.cancel();
-                    Navigator.pop(context, {'status': 'cancelled'});
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 16),
-                  ),
-                  child: const Text("Cancel"),
-                ),
-              ],
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
