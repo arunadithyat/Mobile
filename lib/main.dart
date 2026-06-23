@@ -2883,51 +2883,56 @@ class _LeadCallScreenState extends State<LeadCallScreen> with WidgetsBindingObse
               child: Container(
                 margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade50,
+                  color: Colors.white,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey.shade200),
+                  border: Border.all(color: Colors.grey.shade300),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+                    // Header
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                      ),
                       child: Row(
                         children: [
-                          Icon(Icons.notes, size: 18, color: Colors.grey.shade600),
-                          const SizedBox(width: 6),
-                          Text("Previous Notes",
-                              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.grey.shade700)),
-                          const Spacer(),
-                          if (!_commentsLoading)
-                            Text("${_comments.length}", style: TextStyle(fontSize: 13, color: Colors.grey.shade500)),
+                          const SizedBox(width: 30, child: Text("#", style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700))),
+                          const Expanded(flex: 3, child: Text("Comments", style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700))),
+                          Expanded(flex: 2, child: Text("Updated On", style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.grey.shade700))),
                         ],
                       ),
                     ),
-                    Divider(height: 1, color: Colors.grey.shade200),
+                    Divider(height: 1, color: Colors.grey.shade300),
                     Expanded(
                       child: _commentsLoading
                           ? const Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)))
                           : _comments.isEmpty
                               ? Center(child: Text("No previous notes", style: TextStyle(color: Colors.grey.shade400, fontSize: 14)))
                               : ListView.separated(
-                                  padding: const EdgeInsets.all(12),
+                                  padding: const EdgeInsets.symmetric(vertical: 4),
                                   itemCount: _comments.length,
-                                  separatorBuilder: (_, __) => Divider(height: 16, color: Colors.grey.shade200),
+                                  separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade200),
                                   itemBuilder: (_, i) {
                                     final note = _comments[i];
                                     final text = note['note']?.toString() ?? '';
-                                    final owner = (note['owner']?.toString() ?? '').split('@').first;
-                                    final creation = note['creation']?.toString() ?? '';
-                                    final date = creation.length >= 10 ? creation.substring(5, 10).replaceAll('-', '/') : '';
-                                    return Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(text, style: const TextStyle(fontSize: 14)),
-                                        const SizedBox(height: 4),
-                                        Text("$date — $owner",
-                                            style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
-                                      ],
+                                    final addedOn = note['added_on']?.toString() ?? note['creation']?.toString() ?? '';
+                                    String formattedDate = '';
+                                    if (addedOn.length >= 16) {
+                                      formattedDate = '${addedOn.substring(8, 10)}/${addedOn.substring(5, 7)}\n${addedOn.substring(11, 16)}';
+                                    }
+                                    return Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                      child: Row(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          SizedBox(width: 30, child: Text("${i + 1}.", style: TextStyle(fontSize: 13, color: Colors.grey.shade600))),
+                                          Expanded(flex: 3, child: Text(text, style: const TextStyle(fontSize: 13))),
+                                          Expanded(flex: 2, child: Text(formattedDate, style: TextStyle(fontSize: 12, color: Colors.grey.shade500))),
+                                        ],
+                                      ),
                                     );
                                   },
                                 ),
