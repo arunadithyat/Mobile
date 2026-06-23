@@ -154,7 +154,10 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
               final foJson = jsonDecode(foResponse.body);
               final foMsg = foJson['message'];
               if (foMsg is List) {
-                _fieldOwnerOptions = foMsg.map((e) => e.toString()).toList();
+                _fieldOwnerOptions = foMsg
+                    .map((e) => e is Map ? (e['email'] ?? '').toString() : e.toString())
+                    .where((e) => e.isNotEmpty)
+                    .toList();
               } else if (foMsg is Map && foMsg['options'] is List) {
                 _fieldOwnerOptions = (foMsg['options'] as List).map((e) => e.toString()).toList();
               }
