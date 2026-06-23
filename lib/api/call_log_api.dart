@@ -337,6 +337,40 @@ class CallLogApi {
   }
 
   /// Get CSRF token
+  /// Fetches previous notes/comments for a call log
+  static Future<List<Map<String, dynamic>>> getComments(String callLogName) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cookie = prefs.getString('cookie') ?? '';
+      if (cookie.isEmpty || callLogName.isEmpty) return [];
+
+      final response = await http.post(
+        Uri.parse(AppConfig.getCommentsApi),
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Cookie': cookie,
+          'X-Frappe-CSRF-Token': await _getCsrfToken(cookie),
+        },
+        body: {'call_log': callLogName},
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final json = jsonDecode(response.body);
+        final msg = json['message'];
+        if (msg is Map<String, dynamic> && msg['notes'] is List) {
+          return (msg['notes'] as List)
+              .whereType<Map<String, dynamic>>()
+              .toList();
+        }
+      }
+      debugPrint('[COMMENTS] Response: ${response.statusCode}');
+      return [];
+    } catch (e) {
+      debugPrint('[COMMENTS] Error: $e');
+      return [];
+    }
+  }
+
   static Future<String> _getCsrfToken(String cookie) async {
     try {
       final response = await http.get(
