@@ -441,13 +441,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               status = 'Customer Called Back';
               // Track for 📝 Update Call button (skip already handled)
               final callTs = timestamp.millisecondsSinceEpoch;
-              final handledKey = '${_last10(item.mobileNo)}_${item.callLogName}_$callTs';
-              if (!_handledIncomingKeys.contains(handledKey)) {
-                // Store latest call timestamp per number
-                final num10 = _last10(item.mobileNo);
-                final existing = _incomingCompletedCalls[num10] ?? 0;
-                if (callTs > existing) {
-                  _incomingCompletedCalls[num10] = callTs;
+              // Only track if incoming call happened AFTER queue item was created
+              if (timestamp.isAfter(item.queuedAt)) {
+                final handledKey = '${_last10(item.mobileNo)}_${item.callLogName}_$callTs';
+                if (!_handledIncomingKeys.contains(handledKey)) {
+                  final num10 = _last10(item.mobileNo);
+                  final existing = _incomingCompletedCalls[num10] ?? 0;
+                  if (callTs > existing) {
+                    _incomingCompletedCalls[num10] = callTs;
+                  }
                 }
               }
             } else {
