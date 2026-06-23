@@ -109,6 +109,51 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
   }
 
   Future<void> _fetchData() async {
+    // Step 1: Load cached dropdown options instantly
+    final prefs = await SharedPreferences.getInstance();
+    final cacheKey = widget.isOpportunity ? 'cached_opp_options' : 'cached_lead_options';
+    final cachedJson = prefs.getString(cacheKey);
+    if (cachedJson != null && cachedJson.isNotEmpty) {
+      try {
+        final cached = jsonDecode(cachedJson) as Map<String, dynamic>;
+        final cachedOptions = <String, List<String>>{};
+        cached.forEach((k, v) {
+          if (v is List) cachedOptions[k] = v.map((e) => e.toString()).toList();
+        });
+        if (mounted) {
+          setState(() {
+            _options = cachedOptions;
+            if (!widget.isOpportunity) {
+              _junkReasonOptions = cachedOptions['custom_reason_for_junk'] ?? [];
+              _notInterestedReasonOptions = cachedOptions['custom_reason_for_not_interested'] ?? [];
+            } else {
+              _notInterestedReasons = cachedOptions['custom_reason_for_not_interested'] ?? [];
+            }
+          });
+        }
+        debugPrint('[ANSWERED] ✅ Loaded cached dropdown options');
+      } catch (e) {
+        debugPrint('[ANSWERED] Cache parse error: $e');
+      }
+    }
+    // Load cached field owners
+    final cachedFo = prefs.getString('cached_field_owners');
+    if (cachedFo != null && cachedFo.isNotEmpty) {
+      try {
+        _fieldOwnerOptions = (jsonDecode(cachedFo) as List).map((e) => e.toString()).toList();
+      } catch (_) {}
+    }
+
+    // Step 2: Fetch fresh data from API
+    try {
+      await _doFetchFromApi();
+    } catch (e) {
+      debugPrint('[ANSWERED] API fetch failed: $e — using cached data');
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _doFetchFromApi() async {
     if (widget.isOpportunity) {
       final results = await Future.wait([
         OpportunityApi.getFieldOptions(),
@@ -129,6 +174,11 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
         if (expClose.isNotEmpty) _expectedClosing = DateTime.tryParse(expClose);
         _loading = false;
       });
+      // Save to cache
+      final prefs = await SharedPreferences.getInstance();
+      final cacheMap = <String, dynamic>{};
+      options.forEach((k, v) => cacheMap[k] = v);
+      await prefs.setString('cached_opp_options', jsonEncode(cacheMap));
     } else {
       final results = await Future.wait([
         LeadApi.getFieldOptions(),
@@ -177,6 +227,14 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
         _areaController.text = (values['custom_area'] ?? '').toString();
         _loading = false;
       });
+      // Save to cache
+      final cachePrefs = await SharedPreferences.getInstance();
+      final cacheMap = <String, dynamic>{};
+      options.forEach((k, v) => cacheMap[k] = v);
+      await cachePrefs.setString('cached_lead_options', jsonEncode(cacheMap));
+      if (fieldOwners.isNotEmpty) {
+        await cachePrefs.setString('cached_field_owners', jsonEncode(fieldOwners));
+      }
     }
   }
 

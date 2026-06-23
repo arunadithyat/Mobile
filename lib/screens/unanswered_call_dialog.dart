@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/call_log_api.dart';
 import '../api/lead_api.dart';
@@ -55,30 +57,50 @@ class _UnansweredCallDialogState extends State<UnansweredCallDialog> {
   }
 
   Future<void> _fetchOptions() async {
-    final results = await Future.wait([
-      LeadApi.getFieldOptions(),
-      if (widget.leadName.isNotEmpty)
-        LeadApi.getLeadCurrentValues(widget.leadName)
-      else if (widget.opportunityName.isNotEmpty)
-        OpportunityApi.getCurrentValues(widget.opportunityName)
-      else
-        Future.value(<String, dynamic>{}),
-    ]);
-    final options = results[0] as Map<String, List<String>>;
-    final values = results[1] as Map<String, dynamic>;
-    if (!mounted) return;
-    setState(() {
-      _junkReasonOptions = options['custom_reason_for_junk'] ?? [];
-      if (_junkReasonOptions.isNotEmpty) _junkReason = _junkReasonOptions.first;
-      if (widget.isOpportunity) {
-        _currentOppStatus = (values['status'] ?? '').toString();
-        _status = _currentOppStatus.isNotEmpty ? _currentOppStatus : 'RNR';
-      } else {
-        _currentLeadStatus = (values['status'] ?? '').toString();
-        if (_isFollowupLead) _status = 'Followup';
-      }
-      _loading = false;
-    });
+    // Step 1: Load cached junk reasons instantly
+    final prefs = await SharedPreferences.getInstance();
+    final cachedJson = prefs.getString('cached_lead_options');
+    if (cachedJson != null && cachedJson.isNotEmpty) {
+      try {
+        final cached = jsonDecode(cachedJson) as Map<String, dynamic>;
+        if (cached['custom_reason_for_junk'] is List) {
+          _junkReasonOptions = (cached['custom_reason_for_junk'] as List).map((e) => e.toString()).toList();
+          if (_junkReasonOptions.isNotEmpty) _junkReason = _junkReasonOptions.first;
+        }
+        debugPrint('[UNANSWERED] ✅ Loaded cached junk reasons');
+      } catch (_) {}
+    }
+
+    // Step 2: Fetch fresh from API
+    try {
+      final results = await Future.wait([
+        LeadApi.getFieldOptions(),
+        if (widget.leadName.isNotEmpty)
+          LeadApi.getLeadCurrentValues(widget.leadName)
+        else if (widget.opportunityName.isNotEmpty)
+          OpportunityApi.getCurrentValues(widget.opportunityName)
+        else
+          Future.value(<String, dynamic>{}),
+      ]);
+      final options = results[0] as Map<String, List<String>>;
+      final values = results[1] as Map<String, dynamic>;
+      if (!mounted) return;
+      setState(() {
+        _junkReasonOptions = options['custom_reason_for_junk'] ?? [];
+        if (_junkReasonOptions.isNotEmpty) _junkReason = _junkReasonOptions.first;
+        if (widget.isOpportunity) {
+          _currentOppStatus = (values['status'] ?? '').toString();
+          _status = _currentOppStatus.isNotEmpty ? _currentOppStatus : 'RNR';
+        } else {
+          _currentLeadStatus = (values['status'] ?? '').toString();
+          if (_isFollowupLead) _status = 'Followup';
+        }
+        _loading = false;
+      });
+    } catch (e) {
+      debugPrint('[UNANSWERED] API fetch failed: $e — using cached data');
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   Future<void> _pickFollowUpDate() async {
