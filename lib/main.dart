@@ -319,6 +319,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool _isPaused = false;
   String? _preferredSimId;
   Set<String> _incomingCompletedNumbers = {};
+  Set<String> _handledIncomingKeys = {};
   StreamSubscription<String>? _tokenRefreshSub;
   StreamSubscription<Map<String, dynamic>>? _notificationSub;
   // Fix #2 & #7: Thread-safe duplicate detection with Set<String>
@@ -355,9 +356,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // Load queue FIRST so user sees data immediately
     _refreshQueueDisplay();
 
-    // Load SIM preference
+    // Load SIM preference + handled incoming numbers
     final prefs = await SharedPreferences.getInstance();
     final simPref = prefs.getString('preferred_sim_id');
+    _handledIncomingKeys = (prefs.getStringList('handled_incoming_calls') ?? []).toSet();
     if (simPref != null && simPref.isNotEmpty) {
       _preferredSimId = simPref;
       debugPrint('[SIM] Loaded preferred SIM: $_preferredSimId');
@@ -426,8 +428,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               status = 'Rejected';
             } else if (attended && durationSeconds > 0) {
               status = 'Customer Called Back';
-              // Track for 📝 Update Call button
-              _incomingCompletedNumbers.add(_last10(item.mobileNo));
+              // Track for 📝 Update Call button (skip already handled)
+              final today = DateTime.now().toIso8601String().split('T')[0];
+              final incomingKey = '${today}_${_last10(item.mobileNo)}';
+              if (!_handledIncomingKeys.contains(incomingKey)) {
+                _incomingCompletedNumbers.add(_last10(item.mobileNo));
+              }
             } else {
               status = 'Missed Call';
             }
@@ -1179,6 +1185,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     await prefs.remove('call_history');
     await prefs.remove('pending_dialog');
     await prefs.remove('preferred_sim_id');
+    await prefs.remove('handled_incoming_calls');
 
     await LoginApi.logout();
     if (!mounted) return;
@@ -1275,8 +1282,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       ),
     );
 
-    // After dialog closes, remove from completed set and refresh queue
+    // After dialog closes, mark as handled so it won't reappear
     _incomingCompletedNumbers.remove(_last10(call.mobileNo));
+    final today = DateTime.now().toIso8601String().split('T')[0];
+    final handledKey = '${today}_${_last10(call.mobileNo)}';
+    _handledIncomingKeys.add(handledKey);
+    final prefs = await SharedPreferences.getInstance();
+    final handledList = _handledIncomingKeys.toList();
+    // Keep only last 200 entries
+    if (handledList.length > 200) handledList.removeRange(0, handledList.length - 200);
+    await prefs.setStringList('handled_incoming_calls', handledList);
     await _refreshQueueDisplay();
   }
 
