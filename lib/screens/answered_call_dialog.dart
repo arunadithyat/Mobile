@@ -138,34 +138,36 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
       final values = results[1] as Map<String, dynamic>;
 
       if (!mounted) return;
+      // Fetch field owner options before setState
+      List<String> fieldOwners = [];
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final cookie = prefs.getString('cookie') ?? '';
+        if (cookie.isNotEmpty) {
+          final foResponse = await http.get(
+            Uri.parse(AppConfig.getFieldOwnersApi),
+            headers: {'Cookie': cookie},
+          ).timeout(const Duration(seconds: 10));
+          if (foResponse.statusCode == 200) {
+            final foJson = jsonDecode(foResponse.body);
+            final foMsg = foJson['message'];
+            if (foMsg is List) {
+              fieldOwners = foMsg
+                  .map((e) => e is Map ? (e['email'] ?? '').toString() : e.toString())
+                  .where((e) => e.isNotEmpty)
+                  .toList();
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('[ANSWERED] Field owners fetch error: $e');
+      }
+
+      if (!mounted) return;
       setState(() {
         _options = options;
         _junkReasonOptions = options['custom_reason_for_junk'] ?? [];
-        // Fetch field owner options
-        try {
-          final prefs = await SharedPreferences.getInstance();
-          final cookie = prefs.getString('cookie') ?? '';
-          if (cookie.isNotEmpty) {
-            final foResponse = await http.get(
-              Uri.parse(AppConfig.getFieldOwnersApi),
-              headers: {'Cookie': cookie},
-            ).timeout(const Duration(seconds: 10));
-            if (foResponse.statusCode == 200) {
-              final foJson = jsonDecode(foResponse.body);
-              final foMsg = foJson['message'];
-              if (foMsg is List) {
-                _fieldOwnerOptions = foMsg
-                    .map((e) => e is Map ? (e['email'] ?? '').toString() : e.toString())
-                    .where((e) => e.isNotEmpty)
-                    .toList();
-              } else if (foMsg is Map && foMsg['options'] is List) {
-                _fieldOwnerOptions = (foMsg['options'] as List).map((e) => e.toString()).toList();
-              }
-            }
-          }
-        } catch (e) {
-          debugPrint('[ANSWERED] Field owners fetch error: \$e');
-        }
+        _fieldOwnerOptions = fieldOwners;
         _notInterestedReasonOptions = options['custom_reason_for_not_interested'] ?? [];
         _status = (values['status'] ?? '').toString();
         _customerCategory = (values['custom_customer_category'] ?? '').toString();
