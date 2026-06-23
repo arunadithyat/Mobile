@@ -1,4 +1,8 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import '../config.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
 import 'package:flutter/services.dart';
 
 import '../api/call_log_api.dart';
@@ -59,6 +63,8 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
   final _commentsController = TextEditingController();
   final _areaController = TextEditingController();
   String _junkReason = '';
+  String _fieldOwner = '';
+  List<String> _fieldOwnerOptions = [];
   List<String> _junkReasonOptions = [];
   String _notInterestedReason = '';
   List<String> _notInterestedReasonOptions = [];
@@ -135,6 +141,28 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
       setState(() {
         _options = options;
         _junkReasonOptions = options['custom_reason_for_junk'] ?? [];
+        // Fetch field owner options
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          final cookie = prefs.getString('cookie') ?? '';
+          if (cookie.isNotEmpty) {
+            final foResponse = await http.get(
+              Uri.parse(AppConfig.getFieldOwnersApi),
+              headers: {'Cookie': cookie},
+            ).timeout(const Duration(seconds: 10));
+            if (foResponse.statusCode == 200) {
+              final foJson = jsonDecode(foResponse.body);
+              final foMsg = foJson['message'];
+              if (foMsg is List) {
+                _fieldOwnerOptions = foMsg.map((e) => e.toString()).toList();
+              } else if (foMsg is Map && foMsg['options'] is List) {
+                _fieldOwnerOptions = (foMsg['options'] as List).map((e) => e.toString()).toList();
+              }
+            }
+          }
+        } catch (e) {
+          debugPrint('[ANSWERED] Field owners fetch error: \$e');
+        }
         _notInterestedReasonOptions = options['custom_reason_for_not_interested'] ?? [];
         _status = (values['status'] ?? '').toString();
         _customerCategory = (values['custom_customer_category'] ?? '').toString();
@@ -147,7 +175,10 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
     }
   }
 
-  List<String> _getOptions(String key) => _options[key] ?? [];
+  List<String> _getOptions(String key) {
+    if (key == 'custom_field_owner') return _fieldOwnerOptions;
+    return _options[key] ?? [];
+  }
 
   Future<void> _pickFollowUpDate() async {
     final picked = await showDatePicker(
@@ -214,6 +245,11 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
     }
     if (_isNotInterestedLead && _notInterestedReason.isEmpty) {
       _showSnack("Reason for Not Interested is mandatory"); return;
+    }
+
+    // Field Owner mandatory for Opportunity status
+    if (!widget.isOpportunity && _status == 'Opportunity' && _fieldOwner.isEmpty) {
+      _showSnack("Field Owner is mandatory for Opportunity"); return;
     }
 
     final comments = _commentsController.text.trim();
@@ -329,6 +365,7 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
               'mobile_no': widget.mobileNo,
               'custom_district': _district,
               'custom_area': _areaController.text.trim(),
+              'custom_field_owner': _fieldOwner,
               'custom_citytown': _cityTown,
               'comments': comments,
             },
@@ -604,6 +641,11 @@ class _AnsweredCallDialogState extends State<AnsweredCallDialog> {
               // Status dropdown
               _buildDropdown("Status", "status", _status,
                   (v) => setState(() => _status = v)),
+
+              // Field Owner (only when status = Opportunity for Lead)
+              if (!widget.isOpportunity && _status == 'Opportunity')
+                _buildDropdown("Field Owner", "custom_field_owner", _fieldOwner,
+                    (v) => setState(() => _fieldOwner = v), mandatory: true),
 
               // --- Lead-specific fields ---
               if (!widget.isOpportunity) ...[

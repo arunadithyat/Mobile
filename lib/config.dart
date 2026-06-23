@@ -10,6 +10,10 @@ class AppConfig {
   static const String updateRequiredApi =
       "$baseUrl/api/method/update_required";
 
+  // Get field owners
+  static const String getFieldOwnersApi =
+      "$baseUrl/api/method/get_fieldowners";
+
   // Get comments/notes for a call
   static const String getCommentsApi =
       "$baseUrl/api/method/get_comments";
