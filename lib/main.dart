@@ -320,6 +320,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   String? _preferredSimId;
   Set<String> _incomingCompletedNumbers = {};
   Set<String> _handledIncomingKeys = {};
+  String _handledIncomingKeysName = 'handled_incoming_calls';
   StreamSubscription<String>? _tokenRefreshSub;
   StreamSubscription<Map<String, dynamic>>? _notificationSub;
   // Fix #2 & #7: Thread-safe duplicate detection with Set<String>
@@ -359,7 +360,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // Load SIM preference + handled incoming numbers
     final prefs = await SharedPreferences.getInstance();
     final simPref = prefs.getString('preferred_sim_id');
-    _handledIncomingKeys = (prefs.getStringList('handled_incoming_calls') ?? []).toSet();
+    final username = prefs.getString('cookie')?.split('user_id=').last.split(';').first ?? '';
+    _handledIncomingKeysName = 'handled_incoming_calls_$username';
+    _handledIncomingKeys = (prefs.getStringList(_handledIncomingKeysName) ?? []).toSet();
     if (simPref != null && simPref.isNotEmpty) {
       _preferredSimId = simPref;
       debugPrint('[SIM] Loaded preferred SIM: $_preferredSimId');
@@ -1185,7 +1188,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     await prefs.remove('call_history');
     await prefs.remove('pending_dialog');
     await prefs.remove('preferred_sim_id');
-    await prefs.remove('handled_incoming_calls');
+    // handled_incoming_calls is user-specific — no need to clear on logout
 
     await LoginApi.logout();
     if (!mounted) return;
@@ -1291,7 +1294,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final handledList = _handledIncomingKeys.toList();
     // Keep only last 200 entries
     if (handledList.length > 200) handledList.removeRange(0, handledList.length - 200);
-    await prefs.setStringList('handled_incoming_calls', handledList);
+    await prefs.setStringList(_handledIncomingKeysName, handledList);
     await _refreshQueueDisplay();
   }
 
@@ -1890,6 +1893,26 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       Text(call.mobileNo,
                           style: TextStyle(
                               fontSize: 15, color: Colors.grey[700])),
+                      // Update Call button — below number, shown when incoming call completed
+                      if (_incomingCompletedNumbers.contains(_last10(call.mobileNo)))
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              onPressed: () => _showIncomingCallUpdate(call),
+                              icon: const Icon(Icons.edit_note, size: 20),
+                              label: const Text("Update Call"),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.deepPurple,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ),
+                        ),
                       if (!_isPaused)
                         IconButton(
                           icon: const Icon(Icons.call,
@@ -1897,14 +1920,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                           tooltip: "Call now",
                           onPressed: () =>
                               _processQueuedCallAt(entry.value.key),
-                        ),
-                      // Update Call button — shown when incoming call completed
-                      if (_incomingCompletedNumbers.contains(_last10(call.mobileNo)))
-                        IconButton(
-                          icon: const Icon(Icons.edit_note,
-                              size: 28, color: Colors.deepPurple),
-                          tooltip: "Update Call",
-                          onPressed: () => _showIncomingCallUpdate(call),
                         ),
                       IconButton(
                         icon: const Icon(Icons.message,
