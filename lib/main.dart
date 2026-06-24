@@ -12,6 +12,7 @@ import 'package:lead_calling/services/auto_dialer.dart';
 import 'package:lead_calling/api/call_log_api.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import 'api/device_api.dart';
 import 'api/login_api.dart';
@@ -1457,105 +1458,106 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   Widget _buildDrawer() {
     return Drawer(
-      child: ListView(
-        padding: EdgeInsets.zero,
+      child: Column(
         children: [
-          DrawerHeader(
-            decoration: const BoxDecoration(
-              color: Colors.blue,
+          UserAccountsDrawerHeader(
+            decoration: const BoxDecoration(color: Color(0xFF1A73E8)),
+            currentAccountPicture: CircleAvatar(
+              backgroundColor: Colors.white,
+              backgroundImage: _userImage.isNotEmpty ? NetworkImage(_userImage) : null,
+              child: _userImage.isEmpty
+                  ? Text(
+                      _userFullName.isNotEmpty ? _userFullName[0].toUpperCase() : '?',
+                      style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF1A73E8)),
+                    )
+                  : null,
             ),
-            child: const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.end,
+            accountName: Text(
+              _userFullName.isNotEmpty ? _userFullName : 'SalesGenie',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+            accountEmail: null,
+          ),
+          Expanded(
+            child: ListView(
+              padding: EdgeInsets.zero,
               children: [
-                Text(
-                  'ERP Portal',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                  ),
+                ListTile(
+                  leading: const Icon(Icons.assignment),
+                  title: const Text('Tasks'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => WebViewScreen(
+                          title: 'Tasks',
+                          url: 'https://erp.homegeniegroup.in/TG',
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.dashboard),
+                  title: const Text('Dashboard'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => WebViewScreen(
+                          title: 'Dashboard',
+                          url: 'https://erp.homegeniegroup.in/salesperson',
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.language),
+                  title: const Text('ERP Portal'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => WebViewScreen(
+                          title: 'ERP Portal',
+                          url: 'https://erp.homegeniegroup.in',
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                const Divider(),
+                ListTile(
+                  leading: const Icon(Icons.home),
+                  title: const Text('Back to Home'),
+                  onTap: () {
+                    Navigator.pop(context);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.sim_card, color: Colors.blue),
+                  title: const Text('Select Calling SIM'),
+                  subtitle: Text(_preferredSimId != null ? 'SIM configured' : 'Not set'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showSimPicker();
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.logout, color: Colors.red),
+                  title: const Text('Logout', style: TextStyle(color: Colors.red)),
+                  onTap: () {
+                    Navigator.pop(context);
+                    logout();
+                  },
                 ),
               ],
             ),
           ),
-          ListTile(
-            leading: const Icon(Icons.assignment),
-            title: const Text('Tasks'),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => WebViewScreen(
-                    title: 'Tasks',
-                    url: 'https://erp.homegeniegroup.in/TG',
-                  ),
-                ),
-              );
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.dashboard),
-            title: const Text('Dashboard'),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => WebViewScreen(
-                    title: 'Dashboard',
-                    url: 'https://erp.homegeniegroup.in/salesperson',
-                  ),
-                ),
-              );
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.language),
-            title: const Text('ERP Portal'),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => WebViewScreen(
-                    title: 'ERP Portal',
-                    url: 'https://erp.homegeniegroup.in',
-                  ),
-                ),
-              );
-            },
-          ),
-          const Divider(),
-          ListTile(
-            leading: const Icon(Icons.home),
-            title: const Text('Back to Home'),
-            onTap: () {
-              Navigator.pop(context);
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.sim_card, color: Colors.blue),
-            title: const Text('Select Calling SIM'),
-            subtitle: Text(_preferredSimId != null ? 'SIM configured' : 'Not set'),
-            onTap: () {
-              Navigator.pop(context);
-              _showSimPicker();
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.logout, color: Colors.red),
-            title: const Text('Logout', style: TextStyle(color: Colors.red)),
-            onTap: () {
-              Navigator.pop(context); // close drawer
-              logout();
-            },
-          ),
-              ],
-            ),
-          ),
-          // App version at bottom
           Container(
             padding: const EdgeInsets.symmetric(vertical: 12),
             child: Center(
