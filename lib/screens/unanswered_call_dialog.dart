@@ -38,7 +38,7 @@ class _UnansweredCallDialogState extends State<UnansweredCallDialog> {
   String _currentOppStatus = '';
   bool get _keepCurrentStatus => _isFollowupLead || widget.isOpportunity;
 
-  List<String> get _statusOptions => widget.isOpportunity ? ['RNR'] : ['RNR', 'Junk'];
+  List<String> get _statusOptions => widget.isOpportunity ? ['RNR'] : _isFollowupLead ? ['Followup', 'RNR', 'Junk'] : ['RNR', 'Junk'];
 
   static const List<Map<String, dynamic>> _rnrReasons = [
     {'label': 'Ringing No Response', 'icon': Icons.phone_missed},
@@ -152,7 +152,7 @@ class _UnansweredCallDialogState extends State<UnansweredCallDialog> {
       } else {
         result = await CallLogApi.updateLeadRnr(
           leadName: widget.leadName,
-          status: _isFollowupLead ? 'Followup' : _status,
+          status: _status,
           followUpDate: _followUpDate != null
               ? _followUpDate!.toIso8601String().split('T')[0]
               : DateTime.now().toIso8601String().split('T')[0],
@@ -217,7 +217,7 @@ class _UnansweredCallDialogState extends State<UnansweredCallDialog> {
               const SizedBox(height: 20),
 
               // Status: RNR / Junk (hidden for Followup leads)
-              if (!_keepCurrentStatus) ...[
+              if (!widget.isOpportunity) ...[
               const Align(
                 alignment: Alignment.centerLeft,
                 child: Text("Status",
@@ -227,12 +227,10 @@ class _UnansweredCallDialogState extends State<UnansweredCallDialog> {
               Row(
                 children: _statusOptions.map((s) {
                   final selected = _status == s;
-                  final color = s == 'RNR' ? Colors.orange : Colors.red;
+                  final color = s == 'Followup' ? Colors.blue : s == 'RNR' ? Colors.orange : Colors.red;
                   return Expanded(
                     child: Padding(
-                      padding: EdgeInsets.only(
-                          right: s == 'RNR' ? 6 : 0,
-                          left: s == 'Junk' ? 6 : 0),
+                      padding: const EdgeInsets.symmetric(horizontal: 3),
                       child: InkWell(
                         onTap: () => setState(() => _status = s),
                         borderRadius: BorderRadius.circular(10),
@@ -263,10 +261,10 @@ class _UnansweredCallDialogState extends State<UnansweredCallDialog> {
                 }).toList(),
               ),
               const SizedBox(height: 16),
-              ], // end !_isFollowupLead
+              ], // end !widget.isOpportunity
 
               // Status banner (Followup Lead or any Opportunity)
-              if (_keepCurrentStatus) ...[
+              if (widget.isOpportunity) ...[
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(10),
@@ -282,7 +280,7 @@ class _UnansweredCallDialogState extends State<UnansweredCallDialog> {
               ],
 
               // RNR reasons (shown for RNR status OR Followup leads)
-              if (_status == 'RNR' || _keepCurrentStatus) ...[
+              if (_status == 'RNR' || _status == 'Followup' || widget.isOpportunity) ...[
                 const Align(
                   alignment: Alignment.centerLeft,
                   child: Text("Reason",
