@@ -2129,50 +2129,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           ? const CallHistoryTab()
           : Column(
         children: [
-          // Call Flow Status Bar
-          Container(
-            color: isCallFlowPaused ? Colors.red.shade100 : Colors.green.shade100,
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  isCallFlowPaused
-                      ? "📴 Call Flow Paused"
-                      : "📱 Call Flow Active",
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: isCallFlowPaused ? Colors.red : Colors.green,
-                  ),
-                ),
-                ElevatedButton.icon(
-                  onPressed: toggleCallFlow,
-                  icon: Icon(
-                    isCallFlowPaused ? Icons.play_arrow : Icons.pause,
-                  ),
-                  label: Text(isCallFlowPaused ? "Resume" : "Pause"),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: isCallFlowPaused ? Colors.green : Colors.red,
-                    foregroundColor: Colors.white,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (isCallFlowPaused && _pauseReason.isNotEmpty)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              color: Colors.red.shade50,
-              child: Text(
-                "On $_pauseReason",
-                style: TextStyle(
-                  color: Colors.red.shade700,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
+          // Call Flow Status Bar — hidden (pause logic kept in backend)
+          // if (isCallFlowPaused && _pauseReason.isNotEmpty) — also hidden
           Expanded(
             child: RefreshIndicator(
               onRefresh: _refreshQueueDisplay,
