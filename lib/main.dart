@@ -1164,10 +1164,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _processingLock = true;
     setState(() { _isLeadCallInProgress = true; });
 
+    final callData = call.toMap();
+    callData['preferred_sim_id'] = _preferredSimId ?? '';
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => LeadCallScreen(data: call.toMap()),
+        builder: (_) => LeadCallScreen(data: callData),
       ),
     );
 

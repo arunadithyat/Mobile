@@ -329,12 +329,39 @@ class MainActivity : FlutterActivity() {
           val telecomManager = getSystemService(Context.TELECOM_SERVICE) as TelecomManager
           if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED) {
             val accounts = telecomManager.callCapablePhoneAccounts
+            var matched: PhoneAccountHandle? = null
+
+            // Try 1: direct ID match
             for (account in accounts) {
               if (account.id == simId) {
-                intent.putExtra("android.telecom.extra.PHONE_ACCOUNT_HANDLE", account)
-                println("[NATIVE] Using SIM: $simId")
+                matched = account
+                println("[NATIVE] SIM matched by ID: $simId")
                 break
               }
+            }
+
+            // Try 2: match by subscription ID → slot index
+            if (matched == null) {
+              try {
+                val subscriptionManager = getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as SubscriptionManager
+                val subscriptions = subscriptionManager.activeSubscriptionInfoList ?: emptyList()
+                for ((index, sub) in subscriptions.withIndex()) {
+                  if (sub.subscriptionId.toString() == simId && index < accounts.size) {
+                    matched = accounts[index]
+                    println("[NATIVE] SIM matched by subscriptionId: $simId → slot $index")
+                    break
+                  }
+                }
+              } catch (e: Exception) {
+                println("[NATIVE] Subscription match error: ${e.message}")
+              }
+            }
+
+            if (matched != null) {
+              intent.putExtra("android.telecom.extra.PHONE_ACCOUNT_HANDLE", matched)
+              println("[NATIVE] Using SIM: ${matched.id}")
+            } else {
+              println("[NATIVE] No SIM match found for: $simId — system chooser will appear")
             }
           }
         } catch (e: Exception) {
